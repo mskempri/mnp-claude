@@ -25,7 +25,9 @@ Committed: `a46b3d9`.
   `pkg_timers.fn_sweep_and_process_one_expired_timer` — no DBMS_SCHEDULER job
   or .NET caller exists yet. Documented in `database/README.md`.
 
-## Phase B — outbox notification relay / Notification/Event service (#6) (IN PROGRESS — verification complete, docs + commit remaining)
+## Phase B — outbox notification relay / Notification/Event service (#6) (DONE)
+
+Committed: `d53cb1d`.
 
 Plan file: `.claude/plans/use-the-ddls-stored-agile-whistle.md` (approved).
 
@@ -60,19 +62,14 @@ Done and verified against the live Podman `mnp-oracle` container:
     confirmed `Mnp.Worker` process survived the whole sequence without
     crashing. `Mnp.MockExternalApis` has been restarted after this test.
 
-Remaining before Phase B is closed out (plan step 13):
-- [ ] `database/README.md` — replace the old "nothing reads this table yet"
-      language in the Notification/Event section with the real
-      `PKG_OUTBOX` / `Mnp.Worker` mechanism; document the orphaned-claim-
-      on-crash known limitation (claim and mark-published/failed are
-      separate DB calls with an HTTP call in between — if `Mnp.Worker`
-      crashes mid-dispatch, that row is stuck `CLAIMED` forever; explicitly
-      deferred, not an oversight — same spirit as the existing "known
-      simplifications" section).
-- [ ] Root `README.md` — add `Mnp.Worker` to the architecture table/diagram;
-      move the outbox relay from "not yet built" to "built" in the Status
-      section.
-- [ ] Commit all Phase B changes to git (currently uncommitted).
+All plan steps complete, including step 13 (docs):
+- [x] `database/README.md` — Notification/Event section rewritten with the
+      real `PKG_OUTBOX` / `Mnp.Worker` mechanism, plus the orphaned-claim-
+      on-crash known limitation.
+- [x] Root `README.md` — `Mnp.Worker` added to the architecture table/
+      diagram; Status section moved the outbox relay from "not yet built" to
+      "built".
+- [x] Committed all Phase B changes to git (`d53cb1d`).
 
 ## Phase C — Eligibility & Validation service (NOT STARTED)
 
