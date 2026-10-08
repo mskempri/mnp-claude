@@ -30,7 +30,34 @@ Client -> Mnp.Api (controllers)
 ## Prerequisites
 
 - .NET 10 SDK
-- Access to an Oracle database (XE or similar for local dev)
+- Access to an Oracle database. For local dev, `docker-compose.yml` at the repo
+  root runs [gvenzl/oracle-free](https://github.com/gvenzl/oci-oracle-free) (a
+  community image built specifically for this kind of dev/test use — no Oracle
+  registry login needed, native arm64 + amd64 images) under Podman or Docker.
+
+## Local Oracle (dev)
+
+```bash
+cp .env.example .env   # fill in ORACLE_PASSWORD / APP_USER_PASSWORD, or generate your own
+podman machine start   # if using Podman and the VM isn't already running
+podman compose up -d   # or: docker compose up -d
+podman logs -f mnp-oracle   # watch for "DATABASE IS READY TO USE!" (first run takes a few minutes)
+```
+
+This creates an `mnp_app` user in the `FREEPDB1` pluggable database, reachable at
+`localhost:1521/FREEPDB1`. Apply the schema/package scripts once it's up:
+
+```bash
+source .env
+podman exec -i mnp-oracle sqlplus -s mnp_app/"$APP_USER_PASSWORD"@localhost:1521/FREEPDB1 \
+  < database/schema/001_create_porting_requests_table.sql
+podman exec -i mnp-oracle sqlplus -s mnp_app/"$APP_USER_PASSWORD"@localhost:1521/FREEPDB1 \
+  < database/packages/pkg_porting_requests.pks
+podman exec -i mnp-oracle sqlplus -s mnp_app/"$APP_USER_PASSWORD"@localhost:1521/FREEPDB1 \
+  < database/packages/pkg_porting_requests.pkb
+```
+
+See [database/README.md](database/README.md) for script conventions.
 
 ## Setup
 
@@ -42,12 +69,10 @@ Client -> Mnp.Api (controllers)
    ```bash
    cd src/Mnp.Api
    dotnet user-secrets init
-   dotnet user-secrets set "ConnectionStrings:Oracle" "User Id=mnp_app;Password=...;Data Source=localhost:1521/FREEPDB1;"
+   dotnet user-secrets set "ConnectionStrings:Oracle" "User Id=mnp_app;Password=<APP_USER_PASSWORD from .env>;Data Source=localhost:1521/FREEPDB1;"
    dotnet user-secrets set "CarrierNetwork:BaseUrl" "https://sandbox.carrier-network.example/"
    ```
-3. Apply the database scripts in `database/` (see its README) against your
-   Oracle instance.
-4. Build and run:
+3. Build and run:
    ```bash
    dotnet build
    dotnet run --project src/Mnp.Api
@@ -66,4 +91,9 @@ scaffolded (xUnit) but currently empty — add tests as behavior is implemented.
 
 Scaffolding only: solution structure, DI wiring, one end-to-end vertical slice
 (submit/get a porting request) wired from controller through to a PL/SQL
-package, as a template for the real endpoints to follow.
+package, as a template for the real endpoints to follow. The read path
+(`GET /api/porting-requests/{id}`, `GET /api/porting-requests?msisdn=`) and the
+package's state-transition logic have been verified against a real local
+Oracle instance. The submit path's external carrier-network call is wired but
+untested against a real/sandbox API (`CarrierNetworkOptions.BaseUrl` is still a
+placeholder).

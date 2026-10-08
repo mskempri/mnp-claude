@@ -491,3 +491,7 @@ $RECYCLE.BIN/
 # Oracle / local tooling
 *.log
 tnsnames.ora
+.env
+
+# Claude Code local state
+.claude/

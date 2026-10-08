@@ -32,10 +32,15 @@ rules that belong here.
 ## Applying scripts
 
 No migration tool is wired up yet (Flyway/Liquibase are natural fits once there's a
-shared dev/test database). For now, apply in order with SQL*Plus or SQLcl:
+shared dev/test database). For now, apply in order with SQL*Plus or SQLcl, always
+`schema/` before `packages/`:
 
 ```bash
 sqlplus mnp_app/<password>@//localhost:1521/FREEPDB1 @schema/001_create_porting_requests_table.sql
 sqlplus mnp_app/<password>@//localhost:1521/FREEPDB1 @packages/pkg_porting_requests.pks
 sqlplus mnp_app/<password>@//localhost:1521/FREEPDB1 @packages/pkg_porting_requests.pkb
 ```
+
+For local dev against the Podman/Docker Oracle container, see the root
+[README's Local Oracle section](../README.md#local-oracle-dev) — it runs
+`sqlplus` inside the container instead, since no local Oracle client is assumed.

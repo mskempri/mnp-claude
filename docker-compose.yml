@@ -1,0 +1,18 @@
+# Local dev Oracle instance. Not for production use.
+# Start with: podman compose up -d  (or docker compose up -d)
+services:
+  oracle:
+    image: docker.io/gvenzl/oracle-free:23-slim
+    container_name: mnp-oracle
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD}
+      APP_USER: mnp_app
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+    volumes:
+      - mnp-oracle-data:/opt/oracle/oradata
+    restart: unless-stopped
+
+volumes:
+  mnp-oracle-data:
