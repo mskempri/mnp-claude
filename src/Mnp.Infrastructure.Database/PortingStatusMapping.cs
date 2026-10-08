@@ -15,6 +15,7 @@ internal static class PortingStatusMapping
         PortingStatus.Approved => "APPROVED",
         PortingStatus.Rejected => "REJECTED",
         PortingStatus.Scheduled => "SCHEDULED",
+        PortingStatus.Cutover => "CUTOVER",
         PortingStatus.Completed => "COMPLETED",
         PortingStatus.Cancelled => "CANCELLED",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
@@ -27,6 +28,7 @@ internal static class PortingStatusMapping
         "APPROVED" => PortingStatus.Approved,
         "REJECTED" => PortingStatus.Rejected,
         "SCHEDULED" => PortingStatus.Scheduled,
+        "CUTOVER" => PortingStatus.Cutover,
         "COMPLETED" => PortingStatus.Completed,
         "CANCELLED" => PortingStatus.Cancelled,
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Unknown porting status code from database.")

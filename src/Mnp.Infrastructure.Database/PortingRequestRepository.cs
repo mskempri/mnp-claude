@@ -78,21 +78,21 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         return results;
     }
 
-    public async Task UpdateStatusAsync(
+    public async Task RaiseEventAsync(
         long id,
-        PortingStatus status,
-        string? reason,
+        string eventType,
+        string? context,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandType = CommandType.StoredProcedure;
-        command.CommandText = "PKG_PORTING_REQUESTS.PR_UPDATE_STATUS";
+        command.CommandText = "PKG_PORTING_REQUESTS.PR_RAISE_EVENT";
         command.BindByName = true;
 
         command.Parameters.Add("p_id", OracleDbType.Int64, id, ParameterDirection.Input);
-        command.Parameters.Add("p_status", OracleDbType.Varchar2, PortingStatusMapping.ToCode(status), ParameterDirection.Input);
-        command.Parameters.Add("p_reason", OracleDbType.Varchar2, (object?)reason ?? DBNull.Value, ParameterDirection.Input);
+        command.Parameters.Add("p_event_type", OracleDbType.Varchar2, eventType, ParameterDirection.Input);
+        command.Parameters.Add("p_context", OracleDbType.Varchar2, (object?)context ?? DBNull.Value, ParameterDirection.Input);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

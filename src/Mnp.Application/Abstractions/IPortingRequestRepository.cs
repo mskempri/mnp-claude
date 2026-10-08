@@ -19,9 +19,15 @@ public interface IPortingRequestRepository
 
     Task<IReadOnlyList<PortingRequest>> GetByMsisdnAsync(string msisdn, CancellationToken cancellationToken);
 
-    Task UpdateStatusAsync(
+    /// <summary>
+    /// Raises an event against the request's current status. The database's
+    /// rule engine (PKG_WORKFLOW_ENGINE) alone decides the resulting status -
+    /// there is no way to set status directly, only to raise events and read
+    /// back what happened.
+    /// </summary>
+    Task RaiseEventAsync(
         long id,
-        PortingStatus status,
-        string? reason,
+        string eventType,
+        string? context,
         CancellationToken cancellationToken);
 }

@@ -21,14 +21,17 @@ public sealed class PortingRequestService(
         var validation = await carrierNetworkClient.ValidateSubscriberAsync(
             msisdn, donorNetworkCode, cancellationToken);
 
+        // fn_create_request raises CREATED internally (status stays RECEIVED).
         var id = await repository.CreateAsync(
             msisdn, donorNetworkCode, recipientNetworkCode, requestedPortingDate, cancellationToken);
 
-        if (!validation.IsEligible)
-        {
-            await repository.UpdateStatusAsync(
-                id, PortingStatus.Rejected, validation.DenialReason, cancellationToken);
-        }
+        // The resulting status (APPROVED or REJECTED) is decided entirely by
+        // the database's rule engine, not chosen here.
+        await repository.RaiseEventAsync(
+            id,
+            validation.IsEligible ? "VALIDATION_PASSED" : "VALIDATION_FAILED",
+            validation.IsEligible ? null : validation.DenialReason,
+            cancellationToken);
 
         var created = await repository.GetByIdAsync(id, cancellationToken);
         return created ?? throw new InvalidOperationException(
@@ -40,4 +43,14 @@ public sealed class PortingRequestService(
 
     public Task<IReadOnlyList<PortingRequest>> GetByMsisdnAsync(string msisdn, CancellationToken cancellationToken) =>
         repository.GetByMsisdnAsync(msisdn, cancellationToken);
+
+    public async Task<PortingRequest> RaiseEventAsync(
+        long id, string eventType, string? context, CancellationToken cancellationToken)
+    {
+        await repository.RaiseEventAsync(id, eventType, context, cancellationToken);
+
+        var updated = await repository.GetByIdAsync(id, cancellationToken);
+        return updated ?? throw new InvalidOperationException(
+            $"Porting request {id} was updated but could not be re-read.");
+    }
 }

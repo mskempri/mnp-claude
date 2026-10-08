@@ -1,19 +1,5 @@
 CREATE OR REPLACE PACKAGE BODY pkg_porting_requests AS
 
-    FUNCTION is_transition_allowed(
-        p_from IN VARCHAR2,
-        p_to   IN VARCHAR2
-    ) RETURN BOOLEAN IS
-    BEGIN
-        RETURN CASE p_from
-            WHEN 'RECEIVED'   THEN p_to IN ('VALIDATING', 'REJECTED', 'CANCELLED')
-            WHEN 'VALIDATING' THEN p_to IN ('APPROVED', 'REJECTED', 'CANCELLED')
-            WHEN 'APPROVED'   THEN p_to IN ('SCHEDULED', 'CANCELLED')
-            WHEN 'SCHEDULED'  THEN p_to IN ('COMPLETED', 'CANCELLED')
-            ELSE FALSE -- REJECTED, COMPLETED, CANCELLED are terminal
-        END;
-    END is_transition_allowed;
-
     FUNCTION fn_create_request(
         p_msisdn                 IN VARCHAR2,
         p_donor_network_code     IN VARCHAR2,
@@ -35,7 +21,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_porting_requests AS
         )
         RETURNING id INTO v_id;
 
+        -- Row was just inserted in this transaction, so no separate lock is
+        -- needed before handing off to the engine.
+        pkg_workflow_engine.pr_process_event(v_id, 'RECEIVED', 'CREATED');
+
         RETURN v_id;
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            RAISE_APPLICATION_ERROR(-20004,
+                'An open porting request already exists for MSISDN ' || p_msisdn || '.');
     END fn_create_request;
 
     PROCEDURE pr_get_request(
@@ -65,33 +59,23 @@ CREATE OR REPLACE PACKAGE BODY pkg_porting_requests AS
             ORDER BY created_at DESC;
     END pr_get_requests_by_msisdn;
 
-    PROCEDURE pr_update_status(
-        p_id     IN NUMBER,
-        p_status IN VARCHAR2,
-        p_reason IN VARCHAR2 DEFAULT NULL
+    PROCEDURE pr_raise_event(
+        p_id         IN NUMBER,
+        p_event_type IN VARCHAR2,
+        p_context    IN VARCHAR2 DEFAULT NULL
     ) IS
-        v_current_status mnp_porting_requests.status%TYPE;
+        v_status mnp_porting_requests.status%TYPE;
     BEGIN
-        SELECT status INTO v_current_status
-        FROM mnp_porting_requests
-        WHERE id = p_id
-        FOR UPDATE;
+        SELECT status INTO v_status
+          FROM mnp_porting_requests
+         WHERE id = p_id
+           FOR UPDATE;
 
-        IF NOT is_transition_allowed(v_current_status, p_status) THEN
-            RAISE_APPLICATION_ERROR(-20002,
-                'Cannot transition porting request ' || p_id ||
-                ' from ' || v_current_status || ' to ' || p_status);
-        END IF;
-
-        UPDATE mnp_porting_requests
-        SET status = p_status,
-            rejection_reason = p_reason,
-            updated_at = SYSTIMESTAMP
-        WHERE id = p_id;
+        pkg_workflow_engine.pr_process_event(p_id, v_status, p_event_type, p_context);
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
             RAISE_APPLICATION_ERROR(-20003, 'Porting request not found: ' || p_id);
-    END pr_update_status;
+    END pr_raise_event;
 
 END pkg_porting_requests;
 /
