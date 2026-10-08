@@ -69,9 +69,31 @@ scheduled .NET caller (or `DBMS_SCHEDULER` job) is a later phase.
 ## Notification/Event
 
 `mnp_outbox_events` is a transactional outbox: the engine's `SEND_NOTIFICATION`
-action inserts into it in the same transaction as the status change it
-accompanies. Nothing reads this table yet — a relay worker that claims and
-publishes these rows is a later phase.
+action calls `PKG_OUTBOX.PR_ENQUEUE`, which looks up the target `audience`
+(`DONOR_NETWORK`/`RECIPIENT_NETWORK`/`CUSTOMER`/`OPERATIONS`) for the
+notification's event type in `mnp_notification_types`, and inserts a row —
+`msisdn`/`donor_network_code`/`recipient_network_code` baked into the payload
+— in the same transaction as the status change it accompanies. An
+unregistered event type raises `ORA-20015` rather than enqueueing a
+null-audience row.
+
+`Mnp.Worker` (a separate, always-running background process, not part of
+`Mnp.Api`) polls `PKG_OUTBOX.PR_CLAIM_NEXT_PENDING` (`FOR UPDATE SKIP LOCKED`,
+same no-double-claim guarantee as the timer sweep), dispatches by audience —
+`DONOR_NETWORK`/`RECIPIENT_NETWORK` to the carrier-network notification
+client, `CUSTOMER` to the customer notification client, `OPERATIONS` to a log
+line, no HTTP call — and calls `PR_MARK_PUBLISHED`/`PR_MARK_FAILED`
+accordingly. `PR_MARK_FAILED` increments `attempt_count` and flips the row to
+`DEAD_LETTER` once `mnp_outbox_config.max_attempts` is reached; a
+dead-lettered row is never claimed again.
+
+**Known limitation, not an oversight**: claiming a row and later marking it
+published/failed are two separate DB calls with an HTTP call in between. If
+`Mnp.Worker` crashes mid-dispatch, that row is stuck `CLAIMED` forever —
+it is never retried and the notification is silently lost. A timeout-based
+reclaim was considered and deliberately deferred to keep `PKG_OUTBOX`'s
+surface simple (enqueue / claim / mark-published / mark-failed only); revisit
+if this proves to matter in practice.
 
 ## Conventions
 

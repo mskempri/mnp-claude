@@ -6,6 +6,7 @@
     <Project Path="src/Mnp.Infrastructure.Database/Mnp.Infrastructure.Database.csproj" />
     <Project Path="src/Mnp.Infrastructure.ExternalApis/Mnp.Infrastructure.ExternalApis.csproj" />
     <Project Path="src/Mnp.MockExternalApis/Mnp.MockExternalApis.csproj" />
+    <Project Path="src/Mnp.Worker/Mnp.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Mnp.Application.Tests/Mnp.Application.Tests.csproj" />

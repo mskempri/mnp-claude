@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <UserSecretsId>dotnet-Mnp.Worker-2371d142-fc40-45e0-aaf9-e1e50ebe1ef2</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mnp.Domain\Mnp.Domain.csproj" />
+    <ProjectReference Include="..\Mnp.Application\Mnp.Application.csproj" />
+    <ProjectReference Include="..\Mnp.Infrastructure.Database\Mnp.Infrastructure.Database.csproj" />
+    <ProjectReference Include="..\Mnp.Infrastructure.ExternalApis\Mnp.Infrastructure.ExternalApis.csproj" />
+  </ItemGroup>
+</Project>

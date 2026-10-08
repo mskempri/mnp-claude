@@ -21,16 +21,22 @@ Client -> Mnp.Api (controllers)
              -> Mnp.Application (orchestration: PortingRequestService)
                   -> Mnp.Infrastructure.Database     -> Oracle (PKG_PORTING_REQUESTS -> PKG_WORKFLOW_ENGINE)
                   -> Mnp.Infrastructure.ExternalApis  -> external carrier-network APIs (Mnp.MockExternalApis locally)
+
+Mnp.Worker (separate always-running process)
+             -> Mnp.Application (orchestration: OutboxRelayService)
+                  -> Mnp.Infrastructure.Database     -> Oracle (PKG_OUTBOX)
+                  -> Mnp.Infrastructure.ExternalApis  -> carrier/customer notification APIs (Mnp.MockExternalApis locally)
 ```
 
 | Project | Responsibility |
 |---|---|
 | `src/Mnp.Api` | ASP.NET Core Web API — controllers, DI composition root, config |
-| `src/Mnp.Application` | Orchestration services and the abstractions (`IPortingRequestRepository`, `ICarrierNetworkClient`) they depend on |
+| `src/Mnp.Worker` | Background host — polls the outbox and relays notifications via `OutboxRelayService` |
+| `src/Mnp.Application` | Orchestration services and the abstractions (`IPortingRequestRepository`, `ICarrierNetworkClient`, `IOutboxRepository`, notification clients) they depend on |
 | `src/Mnp.Domain` | Plain entities/enums shared across layers — no framework dependencies |
 | `src/Mnp.Infrastructure.Database` | Calls Oracle PL/SQL packages via ODP.NET (`Oracle.ManagedDataAccess.Core`) |
-| `src/Mnp.Infrastructure.ExternalApis` | Outbound HTTP clients to external carrier/registry APIs, with resilience (retry/timeout/circuit breaker) |
-| `src/Mnp.MockExternalApis` | Dev-only stand-in for external APIs (currently: donor subscriber validation) so the full HTTP round trip is testable locally without a real sandbox |
+| `src/Mnp.Infrastructure.ExternalApis` | Outbound HTTP clients to external carrier/registry/notification APIs, with resilience (retry/timeout/circuit breaker) |
+| `src/Mnp.MockExternalApis` | Dev-only stand-in for external APIs (donor subscriber validation, carrier/customer notifications) so the full HTTP round trip is testable locally without a real sandbox |
 | `database/` | Table DDL, PL/SQL packages, and seed data — see [database/README.md](database/README.md) |
 
 ## Prerequisites
@@ -82,10 +88,11 @@ the rule engine/timers/outbox tables are for.
    ```
    `CarrierNetwork:BaseUrl` doesn't need a secret for local dev — it already
    points at `Mnp.MockExternalApis` via `appsettings.Development.json`.
-3. Build, then run both the API and its local mock external API:
+3. Build, then run the mock external API, the outbox relay worker, and the API:
    ```bash
    dotnet build
    dotnet run --project src/Mnp.MockExternalApis &
+   dotnet run --project src/Mnp.Worker &
    dotnet run --project src/Mnp.Api
    ```
 
@@ -100,11 +107,12 @@ scaffolded (xUnit) but currently empty — add tests as behavior is implemented.
 
 ## Status
 
-Covers the **Port Request Orchestration** and **SLA/Timer** services from the
-target feature set, plus a working (mock-backed) slice of donor-network
-validation. Not yet built: Number/Routing Lookup, the rest of Eligibility &
-Validation, Fraud/Number-Snatching Prevention, and the outbox's relay worker
-(events are enqueued, nothing reads them yet).
+Covers the **Port Request Orchestration**, **SLA/Timer**, and
+**Notification/Event** services from the target feature set, plus a working
+(mock-backed) slice of donor-network validation. Not yet built:
+Number/Routing Lookup, the rest of Eligibility & Validation, and
+Fraud/Number-Snatching Prevention. See [PHASES.md](PHASES.md) for the full
+phased build plan.
 
 Verified end-to-end against a real local Oracle instance (not just
 type-checked): the full lifecycle `RECEIVED -> APPROVED -> SCHEDULED ->
@@ -119,10 +127,21 @@ timer. `Mnp.MockExternalApis` closes the one previously-flagged gap: the
 donor-validation HTTP call now succeeds against a real (if fake) endpoint
 instead of failing DNS resolution.
 
+The outbox relay (`Mnp.Worker` + `PKG_OUTBOX`) is also verified end-to-end:
+dispatch-by-audience routing (donor/recipient network, customer, and an
+internal `OPERATIONS` log-only path) against all three services running
+together; `FOR UPDATE SKIP LOCKED` double-claim prevention; a claimed row
+with unparseable data (e.g. a NULL audience) failing gracefully through the
+retry path instead of crashing the worker host; and the full
+failed-attempt -> `DEAD_LETTER` progression, confirming a dead-lettered row
+is never claimed again and the worker keeps polling throughout.
+
 Known simplifications, not oversights: the timer sweep has no scheduled
 caller yet (call `PKG_TIMERS.fn_sweep_and_process_one_expired_timer`
 manually/via a cron for now); it also doesn't guarantee oldest-expired-first
 processing under concurrent callers (see the comment in `pkg_timers.pkb`).
 The Greek holiday calendar only has fixed-date 2026 holidays seeded — the four
 movable Orthodox feast dates are deliberately left out pending confirmation
-against an authoritative source, not guessed at.
+against an authoritative source, not guessed at. The outbox relay has no
+stale-claim reclaim — if `Mnp.Worker` crashes mid-dispatch, that row stays
+`CLAIMED` forever (see [database/README.md](database/README.md#notificationevent)).

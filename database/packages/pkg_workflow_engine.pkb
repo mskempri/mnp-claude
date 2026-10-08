@@ -27,12 +27,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_workflow_engine AS
                         v_to_status := act.action_parameter;
 
                     WHEN 'SEND_NOTIFICATION' THEN
-                        INSERT INTO mnp_outbox_events (aggregate_id, event_type, payload)
-                        VALUES (
-                            p_request_id,
-                            act.action_parameter,
-                            JSON_OBJECT('requestId' VALUE p_request_id, 'sourceEvent' VALUE p_event_type)
-                        );
+                        pkg_outbox.pr_enqueue(p_request_id, act.action_parameter, p_event_type);
 
                     WHEN 'START_TIMER' THEN
                         pkg_timers.pr_start_timer(p_request_id, act.action_parameter);
