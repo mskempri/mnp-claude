@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Mnp.Api/Mnp.Api.csproj" />
+    <Project Path="src/Mnp.Application/Mnp.Application.csproj" />
+    <Project Path="src/Mnp.Domain/Mnp.Domain.csproj" />
+    <Project Path="src/Mnp.Infrastructure.Database/Mnp.Infrastructure.Database.csproj" />
+    <Project Path="src/Mnp.Infrastructure.ExternalApis/Mnp.Infrastructure.ExternalApis.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Mnp.Application.Tests/Mnp.Application.Tests.csproj" />
+    <Project Path="tests/Mnp.Infrastructure.Database.Tests/Mnp.Infrastructure.Database.Tests.csproj" />
+  </Folder>
+</Solution>
