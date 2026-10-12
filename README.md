@@ -107,12 +107,12 @@ scaffolded (xUnit) but currently empty — add tests as behavior is implemented.
 
 ## Status
 
-Covers the **Port Request Orchestration**, **SLA/Timer**, and
-**Notification/Event** services from the target feature set, plus a working
-(mock-backed) slice of donor-network validation. Not yet built:
-Number/Routing Lookup, the rest of Eligibility & Validation, and
-Fraud/Number-Snatching Prevention. See [PHASES.md](PHASES.md) for the full
-phased build plan.
+Covers all six services from the target feature set: **Port Request
+Orchestration**, **SLA/Timer**, **Notification/Event**, **Eligibility &
+Validation**, **Number/Routing Lookup**, and **Fraud/Number-Snatching
+Prevention**. What remains are documented, deliberate deferrals (see below
+and [PHASES.md](PHASES.md) for the full phased build plan), not missing
+services.
 
 Verified end-to-end against a real local Oracle instance (not just
 type-checked): the full lifecycle `RECEIVED -> APPROVED -> SCHEDULED ->
@@ -136,6 +136,29 @@ retry path instead of crashing the worker host; and the full
 failed-attempt -> `DEAD_LETTER` progression, confirming a dead-lettered row
 is never claimed again and the worker keeps polling throughout.
 
+Eligibility & Validation (`PAC` code validation + the `VALIDATING` status)
+is also verified end-to-end: malformed and expired PAC codes are rejected
+with no row inserted; a valid submission lands in `VALIDATING` (not
+`RECEIVED`) with its SLA timer already running; `VALIDATING` correctly
+reaches `APPROVED`/`REJECTED`/`CANCELLED`; the SLA timer sweep fires an
+internal alert from `VALIDATING` without changing status; and the donor-network
+HTTP call now happens *after* the request is persisted, so a failed/crashed
+call leaves a visible, timer-tracked request instead of silently losing the
+submission.
+
+The Number/Routing Lookup service (`PKG_NUMBER_REGISTRY` +
+`mnp_number_ownership`) is verified end-to-end too: an untracked MSISDN
+returns `404` from `GET /api/number-ownership/{msisdn}`; driving a request to
+`COMPLETED` (both directly via PL/SQL and via the live HTTP API) populates
+exactly one registry row with the right current owner; porting the same
+MSISDN again updates that row rather than duplicating it.
+
+Fraud/Number-Snatching Prevention (`PKG_FRAUD_PREVENTION`) is verified
+end-to-end too: 3 requests for the same MSISDN succeed, a 4th within the
+velocity window is blocked with no row inserted, and a different MSISDN is
+unaffected by the first one's history — confirmed via direct PL/SQL and via
+the live HTTP API (3x `201`, 4th -> `500`).
+
 Known simplifications, not oversights: the timer sweep has no scheduled
 caller yet (call `PKG_TIMERS.fn_sweep_and_process_one_expired_timer`
 manually/via a cron for now); it also doesn't guarantee oldest-expired-first
@@ -145,3 +168,11 @@ movable Orthodox feast dates are deliberately left out pending confirmation
 against an authoritative source, not guessed at. The outbox relay has no
 stale-claim reclaim — if `Mnp.Worker` crashes mid-dispatch, that row stays
 `CLAIMED` forever (see [database/README.md](database/README.md#notificationevent)).
+Eligibility checks real MSISDN format, PAC format/expiry, and donor-reported
+subscriber identity/account status, but not MSISDN-to-donor-network
+*ownership* — the registry that tracks ownership now exists, but
+`fn_create_request` deliberately doesn't consult it yet (see
+[database/README.md](database/README.md#numberrouting-lookup)). A blocked
+fraud-velocity attempt isn't surfaced to Operations via the outbox (it never
+creates a request row to hang a notification on) and isn't audited to a log
+table (no existing precedent for auditing pre-engine guard failures).

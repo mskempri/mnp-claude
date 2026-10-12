@@ -50,6 +50,82 @@ To add a new event/transition: insert rows into `mnp_workflow_branches` and
 then re-run `seed/003_validate_reachability.sql` to confirm you haven't
 stranded a status with no way out.
 
+## Eligibility & Validation
+
+`FN_CREATE_REQUEST` checks two things synchronously, before any row exists —
+MSISDN format (`-20001`, a regex) and PAC (Porting Authorization Code) format
+and expiry (`-20002`): the PAC code must match `^[A-Z0-9]{6,12}$` and be
+within `PAC_VALIDITY`'s window of its `pac_issued_date`, computed via
+`PKG_CALENDAR.fn_calc_timer_expiry` — the same duration-lookup mechanism
+`PKG_TIMERS` uses, just read once at submission time rather than instantiated
+as a swept `mnp_timer_instances` row. Both PAC fields are plain columns on
+`mnp_porting_requests` (added ahead of time in `schema/004`); required-ness is
+enforced in `FN_CREATE_REQUEST`, not a `NOT NULL` constraint, mirroring how
+MSISDN format is enforced.
+
+A request's `CREATED` branch now transitions it straight to `VALIDATING`
+(`seed/006_seed_eligibility_workflow_rules.sql`) instead of leaving it on
+`RECEIVED` — `VALIDATING` is the real pending-eligibility state while .NET's
+donor-network subscriber-identity/account-status check
+(`CarrierNetworkClient.ValidateSubscriberAsync`) is in flight, with the
+`PORT_SLA` timer already running against it. `VALIDATION_PASSED`/
+`VALIDATION_FAILED`/`CANCEL`/`TIMER_EXPIRED` branches that used to hang off
+`RECEIVED` now hang off `VALIDATING` instead; the old `RECEIVED` ones are
+deactivated (`active_flag = 'N'`), not deleted.
+
+*Ownership* (does an MSISDN really belong to the stated donor network) has no
+check of its own yet. The Number/Routing Lookup service (below) now tracks
+current ownership, but `FN_CREATE_REQUEST` deliberately doesn't consult it —
+see that section for why.
+
+## Fraud / Number-Snatching Prevention
+
+`PKG_FRAUD_PREVENTION.pr_check_velocity`, called from `FN_CREATE_REQUEST`
+right after the MSISDN-format check, blocks (`-20005`) a new request if
+`MNP_PORTING_REQUESTS` already has `max_requests_per_window`-or-more rows for
+that MSISDN created within the last `velocity_window_days` calendar days
+(`MNP_FRAUD_CONFIG`, a singleton config row — example values, confirm against
+actual fraud policy, same caveat as PAC validity and every other invented
+duration in this project). Requests of *any* status count toward the
+threshold, not just open ones — the signal is repeated attempts, regardless
+of outcome.
+
+This is distinct from `UX_MPR_MSISDN_OPEN` (`schema/004`), which only
+prevents two *concurrently open* requests for the same MSISDN. This guard
+catches rapid *sequential* resubmission after a prior request already closed
+(cancelled/rejected/completed) — the actual number-snatching pattern.
+
+A blocked attempt is not currently surfaced to Operations via the outbox:
+`PKG_OUTBOX.pr_enqueue` requires an existing `porting_request_id`, and a
+blocked attempt never creates a row. Known limitation, not fixed here.
+
+## Number/Routing Lookup
+
+`mnp_number_ownership` is a registry of "who currently owns this MSISDN,"
+populated only by ports completed *through this system* — there's no row
+for an MSISDN until its first `CUTOVER_COMPLETE`, because a real answer for
+a never-ported number would require the national numbering-plan
+range-to-operator dataset, which this project declines to guess at (same
+caution as the Greek holiday calendar and timer durations: confirm against
+an authoritative source, don't invent one).
+
+The engine's `CUTOVER`/`CUTOVER_COMPLETE` branch runs a new
+`RECORD_NUMBER_OWNERSHIP` action (`PKG_NUMBER_REGISTRY.PR_RECORD_PORT_COMPLETED`)
+alongside its existing `TRANSITION_TO COMPLETED`/`SEND_NOTIFICATION
+PORT_COMPLETED` actions — a `MERGE` upsert, so a number ported more than once
+over time gets one row that's kept current, not a growing history. Reads go
+through `PKG_NUMBER_REGISTRY.PR_LOOKUP` (`SYS_REFCURSOR`, 0 or 1 rows — no
+row is a valid "not tracked" answer, not an error) via `GET
+/api/number-ownership/{msisdn}` (`404` for not-tracked, never a guessed
+network code).
+
+**Deliberately not wired up**: `FN_CREATE_REQUEST` does not consult this
+registry to validate the donor network the client claims. Doing so would
+require committing to an enforcement policy (what counts as a mismatch, and
+whether "not tracked" means "allow") and a bootstrap-data strategy neither of
+which has been specified — explicit follow-up work, not an assumption made
+in Phase D.
+
 ## SLA/Timer
 
 `mnp_timers` holds timer *types* (code, duration, unit — `WD`/`BH`/`CD`);
@@ -103,10 +179,12 @@ if this proves to matter in practice.
   tables — keeps the valid set visible in one place. The .NET side maps these to
   an enum (see `PortingStatusMapping` in `Mnp.Infrastructure.Database`).
 - Errors raised as a dedicated exception number (`RAISE_APPLICATION_ERROR(-200xx, ...)`):
-  `-20001` invalid MSISDN, `-20003` request not found, `-20004` duplicate open
-  request for an MSISDN, `-20010` unknown/inactive timer code, `-20011` unknown
-  condition name, `-20012` unhandled event, `-20013` unknown action type,
-  `-20014` no running timer to cancel.
+  `-20001` invalid MSISDN, `-20002` invalid/expired PAC code, `-20003` request
+  not found, `-20004` duplicate open request for an MSISDN, `-20005`
+  suspicious port velocity for an MSISDN, `-20010`
+  unknown/inactive timer code, `-20011` unknown condition name, `-20012`
+  unhandled event, `-20013` unknown action type, `-20014` no running timer to
+  cancel.
 - Reads that return more than one column go through a `SYS_REFCURSOR` OUT parameter
   so .NET can map a result set without needing an object type.
 - Idempotency ("no duplicate/concurrent open request per MSISDN") is one
