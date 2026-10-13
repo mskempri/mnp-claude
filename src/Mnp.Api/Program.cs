@@ -11,6 +11,8 @@ builder.Services.AddOpenApi();
 builder.Services.AddScoped<IDbConnectionFactory, OracleConnectionFactory>();
 builder.Services.AddScoped<IPortingRequestRepository, PortingRequestRepository>();
 builder.Services.AddScoped<PortingRequestService>();
+builder.Services.AddScoped<INumberRegistryRepository, NumberRegistryRepository>();
+builder.Services.AddScoped<NumberRegistryService>();
 
 builder.Services
     .AddOptions<CarrierNetworkOptions>()

@@ -17,6 +17,8 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         string donorNetworkCode,
         string recipientNetworkCode,
         DateOnly requestedPortingDate,
+        string pacCode,
+        DateOnly pacIssuedDate,
         CancellationToken cancellationToken)
     {
         await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
@@ -34,6 +36,8 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         command.Parameters.Add("p_donor_network_code", OracleDbType.Varchar2, donorNetworkCode, ParameterDirection.Input);
         command.Parameters.Add("p_recipient_network_code", OracleDbType.Varchar2, recipientNetworkCode, ParameterDirection.Input);
         command.Parameters.Add("p_requested_porting_date", OracleDbType.Date, requestedPortingDate.ToDateTime(TimeOnly.MinValue), ParameterDirection.Input);
+        command.Parameters.Add("p_pac_code", OracleDbType.Varchar2, pacCode, ParameterDirection.Input);
+        command.Parameters.Add("p_pac_issued_date", OracleDbType.Date, pacIssuedDate.ToDateTime(TimeOnly.MinValue), ParameterDirection.Input);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
 
@@ -116,6 +120,12 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         RejectionReason = reader.IsDBNull(reader.GetOrdinal("REJECTION_REASON"))
             ? null
             : reader.GetString(reader.GetOrdinal("REJECTION_REASON")),
+        PacCode = reader.IsDBNull(reader.GetOrdinal("PAC_CODE"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("PAC_CODE")),
+        PacIssuedDate = reader.IsDBNull(reader.GetOrdinal("PAC_ISSUED_DATE"))
+            ? null
+            : DateOnly.FromDateTime(reader.GetDateTime(reader.GetOrdinal("PAC_ISSUED_DATE"))),
         CreatedAt = new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("CREATED_AT"))),
         UpdatedAt = new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("UPDATED_AT")))
     };

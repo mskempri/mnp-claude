@@ -9,15 +9,19 @@ CREATE OR REPLACE PACKAGE pkg_porting_requests AS
     -- way a request's status can change, not two.
 
     e_invalid_msisdn           EXCEPTION;
+    e_invalid_pac              EXCEPTION;
     e_duplicate_open_request   EXCEPTION;
     PRAGMA EXCEPTION_INIT(e_invalid_msisdn, -20001);
+    PRAGMA EXCEPTION_INIT(e_invalid_pac, -20002);
     PRAGMA EXCEPTION_INIT(e_duplicate_open_request, -20004);
 
     FUNCTION fn_create_request(
         p_msisdn                 IN VARCHAR2,
         p_donor_network_code     IN VARCHAR2,
         p_recipient_network_code IN VARCHAR2,
-        p_requested_porting_date IN DATE
+        p_requested_porting_date IN DATE,
+        p_pac_code               IN VARCHAR2,
+        p_pac_issued_date        IN DATE
     ) RETURN NUMBER;
 
     PROCEDURE pr_get_request(

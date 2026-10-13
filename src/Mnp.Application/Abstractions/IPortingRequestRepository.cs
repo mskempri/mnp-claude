@@ -13,6 +13,8 @@ public interface IPortingRequestRepository
         string donorNetworkCode,
         string recipientNetworkCode,
         DateOnly requestedPortingDate,
+        string pacCode,
+        DateOnly pacIssuedDate,
         CancellationToken cancellationToken);
 
     Task<PortingRequest?> GetByIdAsync(long id, CancellationToken cancellationToken);

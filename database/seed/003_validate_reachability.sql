@@ -1,9 +1,9 @@
 -- 003_validate_reachability.sql
 -- Verification query, not a migration: run after seeding to confirm every
 -- non-terminal status has at least one active outgoing TRANSITION_TO branch.
--- VALIDATING is deliberately excluded - it is unreachable until Phase C wires
--- an async eligibility step into it; nothing currently transitions a request
--- into VALIDATING, so it needing no way out yet is expected, not a gap.
+-- VALIDATING was unreachable (and excluded here) prior to Phase C; seed/006
+-- wires CREATED's TRANSITION_TO into it, so it is now checked like every
+-- other non-terminal status.
 --
 -- Expected result: no rows. Any row returned means a non-terminal status
 -- would have no way to progress - the exact failure mode that let the
@@ -18,8 +18,7 @@ SELECT s.status AS stranded_status
       SELECT 'SCHEDULED' FROM dual UNION ALL
       SELECT 'CUTOVER' FROM dual
   ) s
- WHERE s.status <> 'VALIDATING'
-   AND NOT EXISTS (
+ WHERE NOT EXISTS (
        SELECT 1
          FROM mnp_workflow_branches b
          JOIN mnp_workflow_actions a ON a.branch_id = b.id

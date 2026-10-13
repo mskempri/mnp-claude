@@ -18,6 +18,8 @@ public sealed class PortingRequestsController(PortingRequestService service) : C
             request.DonorNetworkCode,
             request.RecipientNetworkCode,
             request.RequestedPortingDate,
+            request.PacCode,
+            request.PacIssuedDate,
             cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
@@ -62,6 +64,8 @@ public sealed record SubmitPortingRequest(
     string Msisdn,
     string DonorNetworkCode,
     string RecipientNetworkCode,
-    DateOnly RequestedPortingDate);
+    DateOnly RequestedPortingDate,
+    string PacCode,
+    DateOnly PacIssuedDate);
 
 public sealed record RaisePortingRequestEvent(string EventType, string? Context);

@@ -9,6 +9,8 @@ public sealed class PortingRequest
     public PortingStatus Status { get; init; }
     public DateOnly RequestedPortingDate { get; init; }
     public string? RejectionReason { get; init; }
+    public string? PacCode { get; init; }
+    public DateOnly? PacIssuedDate { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }

@@ -16,14 +16,22 @@ public sealed class PortingRequestService(
         string donorNetworkCode,
         string recipientNetworkCode,
         DateOnly requestedPortingDate,
+        string pacCode,
+        DateOnly pacIssuedDate,
         CancellationToken cancellationToken)
     {
+        // fn_create_request raises CREATED internally, which moves the
+        // request straight to VALIDATING - it exists and its SLA timer is
+        // already running before the donor-network call below ever happens,
+        // so a failure/crash mid-call leaves a visible VALIDATING row (whose
+        // timer will eventually flag SLA_AT_RISK) instead of silently
+        // losing the submission.
+        var id = await repository.CreateAsync(
+            msisdn, donorNetworkCode, recipientNetworkCode, requestedPortingDate,
+            pacCode, pacIssuedDate, cancellationToken);
+
         var validation = await carrierNetworkClient.ValidateSubscriberAsync(
             msisdn, donorNetworkCode, cancellationToken);
-
-        // fn_create_request raises CREATED internally (status stays RECEIVED).
-        var id = await repository.CreateAsync(
-            msisdn, donorNetworkCode, recipientNetworkCode, requestedPortingDate, cancellationToken);
 
         // The resulting status (APPROVED or REJECTED) is decided entirely by
         // the database's rule engine, not chosen here.

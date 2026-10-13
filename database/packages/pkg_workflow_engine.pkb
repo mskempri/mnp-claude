@@ -40,6 +40,9 @@ CREATE OR REPLACE PACKAGE BODY pkg_workflow_engine AS
                            SET rejection_reason = p_context
                          WHERE id = p_request_id;
 
+                    WHEN 'RECORD_NUMBER_OWNERSHIP' THEN
+                        pkg_number_registry.pr_record_port_completed(p_request_id);
+
                     WHEN 'HALT' THEN
                         v_halted := TRUE;
 
