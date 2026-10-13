@@ -6,10 +6,6 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Mnp.Infrastructure.Database;
 
-/// <summary>
-/// Calls PKG_PORTING_REQUESTS (see database/packages). All validation and state-transition
-/// rules live in the package body — this class only shapes parameters and maps rows.
-/// </summary>
 public sealed class PortingRequestRepository(IDbConnectionFactory connectionFactory) : IPortingRequestRepository
 {
     public async Task<long> CreateAsync(

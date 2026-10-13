@@ -3,10 +3,6 @@ using Mnp.Application.Abstractions;
 
 namespace Mnp.Infrastructure.ExternalApis;
 
-/// <summary>
-/// Calls the donor network's subscriber-validation API as part of the porting workflow.
-/// Registered with a resilience handler (retry/circuit-breaker/timeout) in Program.cs.
-/// </summary>
 public sealed class CarrierNetworkClient(HttpClient httpClient) : ICarrierNetworkClient
 {
     public async Task<DonorValidationResult> ValidateSubscriberAsync(

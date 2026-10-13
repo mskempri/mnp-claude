@@ -3,10 +3,6 @@ using Mnp.Application.Services;
 
 namespace Mnp.Worker;
 
-/// <summary>
-/// Drains the outbox (ProcessNextAsync until nothing's left) each cycle,
-/// then waits PollIntervalSeconds before the next cycle.
-/// </summary>
 public sealed class OutboxRelayWorker(
     OutboxRelayService relayService,
     IOptions<OutboxRelayOptions> options,

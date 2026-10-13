@@ -4,11 +4,6 @@ using Mnp.Domain;
 
 namespace Mnp.Application.Services;
 
-/// <summary>
-/// Claims one outbox event, dispatches it to whichever audience it's for, and
-/// marks the result. Callers (Mnp.Worker) should call <see cref="ProcessNextAsync"/>
-/// repeatedly until it returns false, same idiom as the timer sweep.
-/// </summary>
 public sealed class OutboxRelayService(
     IOutboxRepository repository,
     ICarrierNetworkNotificationClient carrierNetworkNotificationClient,
@@ -56,7 +51,6 @@ public sealed class OutboxRelayService(
                 break;
 
             case NotificationAudience.Operations:
-                // Internal alert — nothing external to call, just surface it.
                 logger.LogWarning(
                     "Operations notification: {EventType} for request {RequestId} (msisdn {Msisdn})",
                     outboxEvent.EventType, outboxEvent.RequestId, outboxEvent.Msisdn);

@@ -1,20 +1,19 @@
 -- ============================================================
--- Live export of the MNP_APP schema from the running Oracle
--- database, extracted via DBMS_METADATA directly from the data
--- dictionary - not reconstructed from the repo's own migration
--- scripts. Reflects exactly what currently exists in the DB.
+-- Live export of the MNP_APP schema PLUS reference/config seed
+-- data, from the running Oracle database - extracted via
+-- DBMS_METADATA/direct queries, not reconstructed from the
+-- repo's own migration scripts.
 --
--- Generated 2026-10-09 against the local Podman mnp-oracle
--- container (gvenzl/oracle-free:23-slim), via a PL/SQL block
--- calling DBMS_METADATA.GET_DDL for every TABLE, PACKAGE, and
--- PACKAGE BODY in the MNP_APP schema, plus GET_DDL('INDEX', ...)
--- for indexes not already implied by a table constraint, plus
--- COMMENT ON statements read from USER_TAB_COMMENTS/
--- USER_COL_COMMENTS. Identity-column sequences (ISEQ$$_*) are
--- intentionally omitted: they are embedded inline in each table's
--- GENERATED ALWAYS AS IDENTITY column clause below, not separate
--- objects to recreate. This is a point-in-time snapshot, not a
--- maintained artifact - re-run the export to refresh it.
+-- Seed data here is reference/config data only (workflow rules,
+-- timer durations, holidays, notification routing, fraud/outbox
+-- config) - the tables populated by database/seed/*.sql in the
+-- repo. It deliberately excludes transactional/test data (porting
+-- requests, audit log, outbox events, timer instances, number
+-- ownership) accumulated from live/test usage, not seed data.
+--
+-- Table/column comments and in-source package comments are
+-- stripped (structure only). Identity-column sequences are
+-- omitted (embedded inline in each table's identity column).
 -- ============================================================
 --
 -- TABLES
@@ -235,16 +234,182 @@
 	  REFERENCES "MNP_APP"."MNP_CONDITIONS" ("CONDITION_NAME") ENABLE
    ) ;
 --
--- TABLE AND COLUMN COMMENTS
+-- SEED DATA (reference/config tables only - see header)
 --
-COMMENT ON TABLE MNP_FRAUD_CONFIG IS 'Singleton config for PKG_FRAUD_PREVENTION.pr_check_velocity: blocks a new port request if max_requests_per_window-or-more requests already exist for the same MSISDN within the last velocity_window_days calendar days.';
-COMMENT ON TABLE MNP_NOTIFICATION_TYPES IS 'Registry of valid SEND_NOTIFICATION action_parameter values and who each is for. An unregistered event_type raises (PKG_OUTBOX.pr_enqueue), never silently enqueues with an unknown audience.';
-COMMENT ON TABLE MNP_NUMBER_OWNERSHIP IS 'Current network owner per MSISDN, as last recorded by a completed port through this system. Populated by PKG_NUMBER_REGISTRY via the workflow engine''s RECORD_NUMBER_OWNERSHIP action on CUTOVER/CUTOVER_COMPLETE - not consulted by FN_CREATE_REQUEST (deliberately, see PHASES.md Phase D).';
-COMMENT ON TABLE MNP_OUTBOX_EVENTS IS 'Transactional outbox. Populated by PKG_WORKFLOW_ENGINE; relayed by a .NET worker added in a later phase (not yet implemented).';
-COMMENT ON TABLE MNP_PORTING_REQUESTS IS 'One row per number-porting request. Owned by PKG_PORTING_REQUESTS - do not write to it from application code directly.';
-COMMENT ON TABLE MNP_WORKFLOW_BRANCHES IS 'Config-driven state machine: for (status, event_type), the first branch whose condition is true (or the trailing default) runs, and only that one.';
-COMMENT ON COLUMN MNP_OUTBOX_EVENTS.AUDIENCE IS 'Nullable because rows enqueued before this column existed (Phase A dev data) predate it. Every row enqueued via PKG_OUTBOX.pr_enqueue going forward has this populated.';
-COMMENT ON COLUMN MNP_TIMERS.UNIT_OF_MEASURE IS 'WD = working days, BH = business hours, CD = calendar days';
+INSERT INTO mnp_conditions (condition_name, description, active_flag) VALUES ('IS_CUTOVER_TIMER', 'True when the TIMER_EXPIRED event''s context is the CUTOVER_WINDOW timer code.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('HALT', 'Stops processing further actions in this branch. No seeded branch currently uses this; verified directly (see database/README.md).', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('RECORD_NUMBER_OWNERSHIP', 'Upserts mnp_number_ownership to reflect the request''s recipient_network_code as of this port completing.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('RECORD_REJECTION_REASON', 'Writes the event''s context value into rejection_reason.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('SEND_NOTIFICATION', 'Enqueues an outbox event of type action_parameter.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('START_TIMER', 'Starts a timer instance for the timer code in action_parameter.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('STOP_TIMER', 'Cancels the running timer instance for the timer code in action_parameter.', 'Y');
+INSERT INTO mnp_workflow_action_types (action_type, description, active_flag) VALUES ('TRANSITION_TO', 'Sets the request''s status to action_parameter.', 'Y');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', 'CREATED', 1, NULL, 'Y', 'Request received: start the overall SLA timer and notify.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', 'VALIDATION_PASSED', 1, NULL, 'N', 'Donor validation succeeded: approve.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', 'VALIDATION_FAILED', 1, NULL, 'N', 'Donor validation failed: reject with reason.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', 'CANCEL', 1, NULL, 'Y', 'Customer cancels before validation completes.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', 'TIMER_EXPIRED', 1, NULL, 'Y', 'Overall SLA timer expired while still awaiting validation: alert only, no transition.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('APPROVED', 'SCHEDULE', 1, NULL, 'Y', 'Cutover date/time confirmed: schedule and start the cutover-window timer.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('APPROVED', 'CANCEL', 1, NULL, 'Y', 'Customer cancels after approval, before scheduling.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('SCHEDULED', 'TIMER_EXPIRED', 1, 'IS_CUTOVER_TIMER', 'Y', 'The cutover-window timer expired: begin cutover.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('SCHEDULED', 'TIMER_EXPIRED', 2, NULL, 'Y', 'Defensive default: some other timer code expired while SCHEDULED (should not happen in Phase A) - alert, no transition.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('SCHEDULED', 'CANCEL', 1, NULL, 'Y', 'Customer cancels after scheduling, before cutover begins.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('CUTOVER', 'CUTOVER_COMPLETE', 1, NULL, 'Y', 'Transfer execution confirmed complete.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('RECEIVED', '__TEST_HALT__', 1, NULL, 'N', 'Throwaway test branch - verifies HALT semantics, removed after use.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('VALIDATING', 'VALIDATION_PASSED', 1, NULL, 'Y', 'Donor validation succeeded: approve.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('VALIDATING', 'VALIDATION_FAILED', 1, NULL, 'Y', 'Donor validation failed: reject with reason.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('VALIDATING', 'CANCEL', 1, NULL, 'Y', 'Customer cancels while awaiting eligibility outcome.');
+INSERT INTO mnp_workflow_branches (status, event_type, branch_sequence, condition_name, active_flag, description) VALUES ('VALIDATING', 'TIMER_EXPIRED', 1, NULL, 'Y', 'Overall SLA timer expired while still awaiting validation: alert only, no transition.');
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'TRANSITION_TO', 'CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'APPROVED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'SEND_NOTIFICATION', 'REQUEST_CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'APPROVED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'TRANSITION_TO', 'SCHEDULED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'APPROVED' AND event_type = 'SCHEDULE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'START_TIMER', 'CUTOVER_WINDOW', 'Y' FROM mnp_workflow_branches
+WHERE status = 'APPROVED' AND event_type = 'SCHEDULE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_SCHEDULED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'APPROVED' AND event_type = 'SCHEDULE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'TRANSITION_TO', 'COMPLETED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'CUTOVER' AND event_type = 'CUTOVER_COMPLETE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'SEND_NOTIFICATION', 'PORT_COMPLETED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'CUTOVER' AND event_type = 'CUTOVER_COMPLETE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'RECORD_NUMBER_OWNERSHIP', NULL, 'Y' FROM mnp_workflow_branches
+WHERE status = 'CUTOVER' AND event_type = 'CUTOVER_COMPLETE' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'TRANSITION_TO', 'CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'START_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CREATED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'SEND_NOTIFICATION', 'REQUEST_RECEIVED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CREATED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'TRANSITION_TO', 'VALIDATING', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'CREATED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'SEND_NOTIFICATION', 'SLA_AT_RISK', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'TIMER_EXPIRED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'RECORD_REJECTION_REASON', NULL, 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'TRANSITION_TO', 'REJECTED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 4, 'SEND_NOTIFICATION', 'REQUEST_REJECTED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'TRANSITION_TO', 'APPROVED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_APPROVED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'SEND_NOTIFICATION', 'BEFORE_HALT', 'N' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = '__TEST_HALT__' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'HALT', NULL, 'N' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = '__TEST_HALT__' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'AFTER_HALT_SHOULD_NOT_APPEAR', 'N' FROM mnp_workflow_branches
+WHERE status = 'RECEIVED' AND event_type = '__TEST_HALT__' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'CUTOVER_WINDOW', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'TRANSITION_TO', 'CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'TRANSITION_TO', 'CUTOVER', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'TIMER_EXPIRED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'SEND_NOTIFICATION', 'CUTOVER_STARTED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'TIMER_EXPIRED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'SEND_NOTIFICATION', 'UNEXPECTED_TIMER_EXPIRY', 'Y' FROM mnp_workflow_branches
+WHERE status = 'SCHEDULED' AND event_type = 'TIMER_EXPIRED' AND branch_sequence = 2;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'TRANSITION_TO', 'CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_CANCELLED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'CANCEL' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'SEND_NOTIFICATION', 'SLA_AT_RISK', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'TIMER_EXPIRED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'RECORD_REJECTION_REASON', NULL, 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'TRANSITION_TO', 'REJECTED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 4, 'SEND_NOTIFICATION', 'REQUEST_REJECTED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_FAILED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 1, 'STOP_TIMER', 'PORT_SLA', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 2, 'TRANSITION_TO', 'APPROVED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_workflow_actions (branch_id, action_sequence, action_type, action_parameter, active_flag)
+SELECT id, 3, 'SEND_NOTIFICATION', 'REQUEST_APPROVED', 'Y' FROM mnp_workflow_branches
+WHERE status = 'VALIDATING' AND event_type = 'VALIDATION_PASSED' AND branch_sequence = 1;
+INSERT INTO mnp_business_hours (id, start_time, end_time, time_zone) VALUES (1, '09:00', '17:00', 'Europe/Athens');
+INSERT INTO mnp_timers (timer_code, description, duration_units, unit_of_measure, active_flag) VALUES ('CUTOVER_WINDOW', 'Gap between scheduling and cutover execution (example value - confirm against jurisdiction).', 2, 'BH', 'Y');
+INSERT INTO mnp_timers (timer_code, description, duration_units, unit_of_measure, active_flag) VALUES ('PAC_VALIDITY', 'Window during which an issued PAC code remains valid (example value - confirm against jurisdiction).', 30, 'CD', 'Y');
+INSERT INTO mnp_timers (timer_code, description, duration_units, unit_of_measure, active_flag) VALUES ('PORT_SLA', 'Overall regulatory window from request receipt to validation outcome (example value - confirm against jurisdiction).', 1, 'WD', 'Y');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-01-01', 'New Year''s Day');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-01-06', 'Epiphany');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-03-25', 'Greek Independence Day');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-05-01', 'Labour Day');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-08-15', 'Assumption of Mary');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-10-28', 'Ochi Day');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-12-25', 'Christmas Day');
+INSERT INTO mnp_calendar_holidays (holiday_date, description) VALUES (DATE '2026-12-26', 'Synaxis of the Mother of God');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('CUTOVER_STARTED', 'DONOR_NETWORK', 'Donor executes the decommission/release at this trigger.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('PORT_COMPLETED', 'CUSTOMER', 'Number is now live on the new network.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('REQUEST_APPROVED', 'RECIPIENT_NETWORK', 'Debatable: could argue DONOR_NETWORK instead. Gaining carrier can proceed toward scheduling.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('REQUEST_CANCELLED', 'RECIPIENT_NETWORK', 'Debatable: could argue DONOR_NETWORK instead. Stands down in-flight scheduling/cutover prep.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('REQUEST_RECEIVED', 'CUSTOMER', 'Acknowledgment; no network action is gated on it.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('REQUEST_REJECTED', 'CUSTOMER', 'Terminal; donor already knows (it produced the determination), customer needs the reason.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('REQUEST_SCHEDULED', 'DONOR_NETWORK', 'Debatable: could argue RECIPIENT_NETWORK instead. Donor needs advance notice to prepare release.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('SLA_AT_RISK', 'OPERATIONS', 'Internal alert; no customer/network action.');
+INSERT INTO mnp_notification_types (event_type, audience, description) VALUES ('UNEXPECTED_TIMER_EXPIRY', 'OPERATIONS', 'Defensive fallback branch; should not happen in practice.');
+INSERT INTO mnp_outbox_config (id, max_attempts) VALUES (1, 5);
+INSERT INTO mnp_fraud_config (id, velocity_window_days, max_requests_per_window) VALUES (1, 7, 3);
+COMMIT;
 --
 -- STANDALONE INDEXES (not already created by a table constraint)
 --
@@ -271,17 +436,6 @@ COMMENT ON COLUMN MNP_TIMERS.UNIT_OF_MEASURE IS 'WD = working days, BH = busines
 --
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_CALENDAR" AS
-    -- Working-day / business-hour / calendar-day arithmetic for SLA timers.
-    -- All arithmetic is performed in the business-hours configuration's
-    -- time_zone (Europe/Athens for this deployment, see mnp_business_hours),
-    -- not the DB session's or host's default zone, and is DST-correct: "N
-    -- calendar days later" lands on the same local wall-clock time on that
-    -- date even across a DST transition, not simply N*24 hours later.
-    --
-    -- Deliberately has no bypass/override switch of any kind. The legacy
-    -- reference system had a global flag that could collapse every
-    -- regulatory timer to ~1 minute; that capability does not exist here,
-    -- in any form, reachable from any build.
 
     FUNCTION fn_add_working_days(
         p_from IN TIMESTAMP WITH TIME ZONE,
@@ -307,12 +461,6 @@ END pkg_calendar;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_CONDITIONS" AS
-    -- Named condition dispatch for workflow branches. An unknown condition
-    -- name RAISES rather than returning a sentinel a caller might mistake
-    -- for "false" — the legacy reference system's evaluate() returned -1 for
-    -- an unrecognised name, which its engine then treated identically to a
-    -- false result, silently skipping the branch instead of surfacing a
-    -- config error. That failure mode is not reproduced here.
 
     FUNCTION fn_evaluate(
         p_condition_name IN VARCHAR2,
@@ -325,40 +473,19 @@ END pkg_conditions;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_FRAUD_PREVENTION" AS
-    -- Fraud/Number-Snatching Prevention service (#5 in the six-service
-    -- spec): a velocity guard against rapid/repeated port-request attempts
-    -- for the same MSISDN. Distinct from UX_MPR_MSISDN_OPEN (schema/004),
-    -- which only prevents two *concurrently open* requests - this catches
-    -- rapid sequential resubmission after a prior request already closed
-    -- (cancelled/rejected/completed), the actual number-snatching pattern.
 
     e_suspicious_velocity EXCEPTION;
     PRAGMA EXCEPTION_INIT(e_suspicious_velocity, -20005);
 
-    -- Raises e_suspicious_velocity if MNP_PORTING_REQUESTS already has
-    -- max_requests_per_window-or-more rows for p_msisdn created within the
-    -- last velocity_window_days calendar days (MNP_FRAUD_CONFIG; example
-    -- values - confirm against actual fraud policy), counting requests of
-    -- ANY status - the signal is repeated attempts, not just open ones.
-    -- Called by PKG_PORTING_REQUESTS.fn_create_request before the new row
-    -- is inserted, so it evaluates prior history only.
     PROCEDURE pr_check_velocity(p_msisdn IN VARCHAR2);
 
 END pkg_fraud_prevention;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_NUMBER_REGISTRY" AS
-    -- Number/Routing Lookup service. Owns MNP_NUMBER_OWNERSHIP - a registry
-    -- of "who currently owns this MSISDN", populated only from ports
-    -- completed inside this system (see schema/006 for why it can't be
-    -- more than that). Read-only from .NET's perspective; writes only ever
-    -- happen via PR_RECORD_PORT_COMPLETED, called by PKG_WORKFLOW_ENGINE.
 
     PROCEDURE pr_record_port_completed(p_request_id IN NUMBER);
 
-    -- Returns 0 or 1 rows: msisdn, current_network_code, last_ported_at,
-    -- last_porting_request_id. No row is a valid "not tracked" answer, not
-    -- an error - callers should not expect this to raise on a miss.
     PROCEDURE pr_lookup(
         p_msisdn IN  VARCHAR2,
         p_cursor OUT SYS_REFCURSOR
@@ -368,44 +495,20 @@ END pkg_number_registry;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_OUTBOX" AS
-    -- Transactional outbox for the Notification/Event service. PKG_WORKFLOW_ENGINE
-    -- is the only caller of PR_ENQUEUE (from its SEND_NOTIFICATION action, inside
-    -- the engine's existing row lock/transaction, so a notification is never
-    -- recorded without the state change it accompanies actually committing).
-    -- Mnp.Worker is the only caller of the claim/mark procedures.
-    --
-    -- Known limitation, deliberately not solved here: claiming a row and later
-    -- marking it published/failed are two separate calls with an HTTP call in
-    -- between. If the claiming process crashes mid-dispatch, that row is stuck
-    -- CLAIMED forever - never retried, message silently lost. A timeout-based
-    -- reclaim was considered and explicitly deferred to keep this surface
-    -- simple; see database/README.md.
 
     e_unknown_event_type EXCEPTION;
     PRAGMA EXCEPTION_INIT(e_unknown_event_type, -20015);
 
-    -- Looks up the audience for p_notification_event_type in
-    -- MNP_NOTIFICATION_TYPES (raises -20015 if unregistered - never enqueues
-    -- with an unknown audience). Joins MNP_PORTING_REQUESTS for msisdn/
-    -- donor_network_code/recipient_network_code and bakes them into the
-    -- payload uniformly, regardless of audience, so Mnp.Worker never needs a
-    -- second DB round-trip to dispatch.
     PROCEDURE pr_enqueue(
         p_request_id              IN NUMBER,
         p_notification_event_type IN VARCHAR2,
         p_source_event            IN VARCHAR2
     );
 
-    -- Claims one PENDING row (FOR UPDATE SKIP LOCKED + ROWNUM = 1, no ORDER
-    -- BY - FOR UPDATE doesn't support FETCH FIRST/an ORDER BY'd inline view,
-    -- ORA-02014). p_cursor has 0 or 1 rows: id, event_type, audience, payload.
     PROCEDURE pr_claim_next_pending(p_cursor OUT SYS_REFCURSOR);
 
     PROCEDURE pr_mark_published(p_outbox_id IN NUMBER);
 
-    -- Increments attempt_count and records p_error. Flips to DEAD_LETTER if
-    -- attempt_count has now reached MNP_OUTBOX_CONFIG.max_attempts, else back
-    -- to PENDING for the next poll cycle.
     PROCEDURE pr_mark_failed(
         p_outbox_id IN NUMBER,
         p_error     IN VARCHAR2
@@ -415,14 +518,6 @@ END pkg_outbox;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_PORTING_REQUESTS" AS
-    -- Owns the porting-request aggregate. .NET calls only this package -
-    -- never the engine/conditions/calendar packages, and never the table
-    -- directly. State transitions are no longer decided here: PR_RAISE_EVENT
-    -- hands off to PKG_WORKFLOW_ENGINE, which alone decides the resulting
-    -- status from data in MNP_WORKFLOW_BRANCHES/MNP_WORKFLOW_ACTIONS. There
-    -- is deliberately no direct status setter any more (no PR_UPDATE_STATUS) -
-    -- every status change must go through an event, so there is exactly one
-    -- way a request's status can change, not two.
 
     e_invalid_msisdn           EXCEPTION;
     e_invalid_pac              EXCEPTION;
@@ -450,9 +545,6 @@ END pkg_outbox;
         p_cursor OUT SYS_REFCURSOR
     );
 
-    -- Raises an event against the request's current status. Takes the row
-    -- lock itself (FOR UPDATE) before delegating to the engine, so this is
-    -- the single serialization point for concurrent events on one request.
     PROCEDURE pr_raise_event(
         p_id         IN NUMBER,
         p_event_type IN VARCHAR2,
@@ -463,9 +555,6 @@ END pkg_porting_requests;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_TIMERS" AS
-    -- Timer lifecycle for the SLA/Timer service. Durations/units live in
-    -- MNP_TIMERS (data); expiry is computed via PKG_CALENDAR at start time,
-    -- so sweeping is a cheap "expires_at <= now" scan.
 
     PROCEDURE pr_start_timer(
         p_request_id  IN NUMBER,
@@ -477,48 +566,12 @@ END pkg_porting_requests;
         p_timer_code  IN VARCHAR2
     );
 
-    -- Claims exactly one expired RUNNING timer (FOR UPDATE SKIP LOCKED, so
-    -- concurrent callers never double-claim the same row), locks its owning
-    -- request, raises TIMER_EXPIRED through the engine, and marks the timer
-    -- EXPIRED - all in one transaction/one call, with no separate
-    -- claim-then-process step. That single-transaction shape is deliberate:
-    -- the legacy reference's timer worker had a visible claim/process split
-    -- with no locking in between, which is exactly the shape that allows two
-    -- concurrent workers to double-process the same expired timer. Here
-    -- there is no window in which that race can occur.
-    --
-    -- Returns the timer_instance id it processed, or NULL if nothing was
-    -- due. Callers (SQL*Plus for now; a scheduled .NET caller is a later
-    -- phase) should call this repeatedly until it returns NULL.
-    --
-    -- Does not guarantee oldest-expired-timer-first ordering under
-    -- concurrent callers (see implementation comment) - only that each call
-    -- claims exactly one unlocked expired timer, never the same one twice.
     FUNCTION fn_sweep_and_process_one_expired_timer RETURN NUMBER;
 
 END pkg_timers;
 /
 
   CREATE OR REPLACE EDITIONABLE PACKAGE "MNP_APP"."PKG_WORKFLOW_ENGINE" AS
-    -- The generic rule engine: given a request's current status and an
-    -- incoming event, walks MNP_WORKFLOW_BRANCHES for that (status, event)
-    -- in branch_sequence order. The FIRST branch whose condition is true (or
-    -- the trailing default branch, condition_name IS NULL) is the ONLY
-    -- branch whose actions run - branches are mutually exclusive by
-    -- construction, so two branches can never both fire for the same event
-    -- the way independently-gated rows could in the legacy reference design.
-    --
-    -- Every branch considered (matched or not) and every action dispatched
-    -- is logged to MNP_WORKFLOW_AUDIT_LOG, including HALTs.
-    --
-    -- If no branch matches at all - including when no default branch is
-    -- defined for that (status, event) - this RAISES an "unhandled event"
-    -- error rather than silently doing nothing.
-    --
-    -- Precondition: the caller is responsible for any row locking on
-    -- MNP_PORTING_REQUESTS. This procedure assumes p_current_status is
-    -- already a trustworthy, locked-or-just-inserted read and does not
-    -- re-select or lock the row itself.
 
     PROCEDURE pr_process_event(
         p_request_id      IN NUMBER,
@@ -590,7 +643,6 @@ END pkg_workflow_engine;
         v_cursor := CAST(p_from AT TIME ZONE v_tz AS DATE);
         v_remaining_minutes := p_hours * 60;
 
-        -- Normalise the starting point onto a working day, within the window.
         LOOP
             v_day_end := TRUNC(v_cursor) + TO_DSINTERVAL('0 ' || v_end_time || ':00');
             EXIT WHEN fn_is_working_day(TRUNC(v_cursor)) AND v_cursor < v_day_end;
@@ -705,9 +757,6 @@ END pkg_conditions;
           FROM mnp_fraud_config
          WHERE id = 1;
 
-        -- Plain date arithmetic, so a negative day count correctly walks
-        -- backward - reuses the project's one sanctioned Europe/Athens
-        -- arithmetic path instead of a raw SYSTIMESTAMP expression.
         v_window_start := pkg_calendar.fn_add_calendar_days(SYSTIMESTAMP, -v_window_days);
 
         SELECT COUNT(*) INTO v_count
@@ -850,7 +899,7 @@ END pkg_number_registry;
            AND status = 'CLAIMED';
 
         IF SQL%ROWCOUNT = 0 THEN
-            RETURN; -- row wasn't CLAIMED (already moved on); nothing to do
+            RETURN;
         END IF;
 
         SELECT attempt_count INTO v_attempt_count FROM mnp_outbox_events WHERE id = p_outbox_id;
@@ -891,10 +940,6 @@ END pkg_outbox;
             RAISE_APPLICATION_ERROR(-20002, 'PAC issued date is required.');
         END IF;
 
-        -- PAC_VALIDITY is a pure duration lookup via PKG_CALENDAR (example
-        -- value - confirm against jurisdiction, see seed/006), not a timer
-        -- instance: this is a synchronous check at submission time, never
-        -- swept.
         v_pac_expiry := pkg_calendar.fn_calc_timer_expiry(
             FROM_TZ(CAST(p_pac_issued_date AS TIMESTAMP), 'Europe/Athens'), 'PAC_VALIDITY');
         IF SYSTIMESTAMP > v_pac_expiry THEN
@@ -912,8 +957,6 @@ END pkg_outbox;
         )
         RETURNING id INTO v_id;
 
-        -- Row was just inserted in this transaction, so no separate lock is
-        -- needed before handing off to the engine.
         pkg_workflow_engine.pr_process_event(v_id, 'RECEIVED', 'CREATED');
 
         RETURN v_id;
@@ -1011,15 +1054,7 @@ END pkg_porting_requests;
         v_timer_code      mnp_timer_instances.timer_code%TYPE;
         v_current_status  mnp_porting_requests.status%TYPE;
     BEGIN
-        -- FOR UPDATE does not support selecting through a view containing
-        -- ORDER BY/DISTINCT/GROUP BY (ORA-02014), which rules out both
-        -- FETCH FIRST...ROWS ONLY and an ORDER BY'd inline subquery here.
-        -- ROWNUM = 1 directly against the base table (no ordering) is the
-        -- idiom that remains compatible with FOR UPDATE SKIP LOCKED - the
-        -- trade-off is that this does not guarantee strict oldest-expired-
-        -- first processing under concurrent sweepers, only that each call
-        -- claims exactly one unlocked expired timer. Acceptable for Phase A;
-        -- revisit if strict FIFO ordering becomes a real requirement.
+
         SELECT id, porting_request_id, timer_code
           INTO v_timer_id, v_request_id, v_timer_code
           FROM mnp_timer_instances

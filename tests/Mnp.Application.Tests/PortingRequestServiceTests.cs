@@ -45,8 +45,6 @@ public sealed class PortingRequestServiceTests
         Assert.Equal("VALIDATION_PASSED", eventType);
         Assert.Null(context);
 
-        // Create must happen before the donor-network call, and the event
-        // must be raised only after that call returns.
         Assert.True(repository.CreateCompletedBeforeValidate);
         Assert.True(carrierClient.ValidateCompletedBeforeRaiseEvent);
     }
@@ -82,9 +80,6 @@ public sealed class PortingRequestServiceTests
             Msisdn, DonorNetworkCode, RecipientNetworkCode, RequestedPortingDate, PacCode, PacIssuedDate,
             CancellationToken.None));
 
-        // The request already exists (in VALIDATING, by the engine's own
-        // CREATED-branch transition) and is left there - not silently
-        // discarded - rather than never having been created at all.
         Assert.Single(repository.CreateCalls);
         Assert.Empty(repository.RaiseEventCalls);
     }

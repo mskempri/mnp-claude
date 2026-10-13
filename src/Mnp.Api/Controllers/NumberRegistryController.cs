@@ -8,10 +8,6 @@ namespace Mnp.Api.Controllers;
 [Route("api/number-ownership")]
 public sealed class NumberRegistryController(NumberRegistryService service) : ControllerBase
 {
-    /// <summary>
-    /// 404 means "not tracked" - this MSISDN has never completed a port
-    /// through this system, not that it has no owner.
-    /// </summary>
     [HttpGet("{msisdn}")]
     public async Task<ActionResult<NumberOwnership>> GetByMsisdn(string msisdn, CancellationToken cancellationToken)
     {

@@ -6,10 +6,6 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Mnp.Infrastructure.Database;
 
-/// <summary>
-/// Calls PKG_NUMBER_REGISTRY (see database/packages). Read-only - the
-/// registry is only ever written by the workflow engine.
-/// </summary>
 public sealed class NumberRegistryRepository(IDbConnectionFactory connectionFactory) : INumberRegistryRepository
 {
     public async Task<NumberOwnership?> LookupAsync(string msisdn, CancellationToken cancellationToken)

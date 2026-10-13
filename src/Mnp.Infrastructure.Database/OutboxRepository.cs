@@ -7,11 +7,6 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Mnp.Infrastructure.Database;
 
-/// <summary>
-/// Calls PKG_OUTBOX. JSON payload parsing happens here, not in Mnp.Application —
-/// mirrors how PortingRequestRepository.Map() shapes a raw cursor row into a
-/// typed object; JSON stays an infrastructure concern.
-/// </summary>
 public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : IOutboxRepository
 {
     public async Task<OutboxEvent?> ClaimNextPendingEventAsync(CancellationToken cancellationToken)
@@ -35,10 +30,6 @@ public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : I
 
         var id = reader.GetInt64(reader.GetOrdinal("ID"));
 
-        // A claimed row that can't be parsed (e.g. a NULL audience from a row
-        // enqueued before that column existed) must not crash the whole
-        // relay loop — it's already claimed, so fail it through the normal
-        // retry/dead-letter path instead of leaving it stuck CLAIMED.
         try
         {
             var eventType = reader.GetString(reader.GetOrdinal("EVENT_TYPE"));

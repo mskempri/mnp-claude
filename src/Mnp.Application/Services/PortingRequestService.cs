@@ -3,10 +3,6 @@ using Mnp.Domain;
 
 namespace Mnp.Application.Services;
 
-/// <summary>
-/// Thin orchestration: validate with the donor network over HTTP, then hand off
-/// to the database package, which owns the actual business rules and state machine.
-/// </summary>
 public sealed class PortingRequestService(
     IPortingRequestRepository repository,
     ICarrierNetworkClient carrierNetworkClient)
@@ -20,12 +16,6 @@ public sealed class PortingRequestService(
         DateOnly pacIssuedDate,
         CancellationToken cancellationToken)
     {
-        // fn_create_request raises CREATED internally, which moves the
-        // request straight to VALIDATING - it exists and its SLA timer is
-        // already running before the donor-network call below ever happens,
-        // so a failure/crash mid-call leaves a visible VALIDATING row (whose
-        // timer will eventually flag SLA_AT_RISK) instead of silently
-        // losing the submission.
         var id = await repository.CreateAsync(
             msisdn, donorNetworkCode, recipientNetworkCode, requestedPortingDate,
             pacCode, pacIssuedDate, cancellationToken);
@@ -33,8 +23,6 @@ public sealed class PortingRequestService(
         var validation = await carrierNetworkClient.ValidateSubscriberAsync(
             msisdn, donorNetworkCode, cancellationToken);
 
-        // The resulting status (APPROVED or REJECTED) is decided entirely by
-        // the database's rule engine, not chosen here.
         await repository.RaiseEventAsync(
             id,
             validation.IsEligible ? "VALIDATION_PASSED" : "VALIDATION_FAILED",
