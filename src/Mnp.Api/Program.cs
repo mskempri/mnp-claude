@@ -18,8 +18,6 @@ builder.Services.AddProblemDetails();
 
 builder.Services.AddHttpLogging(options =>
 {
-    // Deliberately excludes request/response bodies and headers: bodies carry
-    // MSISDNs (SubmitPortingRequest, RaisePortingRequestEvent context).
     options.LoggingFields =
         HttpLoggingFields.RequestMethod |
         HttpLoggingFields.RequestPath |
@@ -52,7 +50,6 @@ builder.Services
 
 var app = builder.Build();
 
-// Resolved once; BeginScope is cheap per-request and avoids a DI lookup on every request.
 var correlationLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("RequestCorrelation");
 
 if (app.Environment.IsDevelopment())

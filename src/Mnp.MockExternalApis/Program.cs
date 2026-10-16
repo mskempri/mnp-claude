@@ -24,8 +24,6 @@ var app = builder.Build();
 
 var correlationLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("RequestCorrelation");
 
-var correlationLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("RequestCorrelation");
-
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

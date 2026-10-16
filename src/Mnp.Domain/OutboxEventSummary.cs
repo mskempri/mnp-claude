@@ -1,11 +1,5 @@
 namespace Mnp.Domain;
 
-/// <summary>
-/// Read-only view of an outbox row for observability (e.g. a status
-/// dashboard) — distinct from <see cref="OutboxEvent"/>, which is the shape
-/// Mnp.Worker claims and dispatches. Audience is nullable because rows
-/// enqueued before that column existed (Phase A dev data) predate it.
-/// </summary>
 public sealed class OutboxEventSummary
 {
     public required long Id { get; init; }

@@ -22,7 +22,6 @@
     <section class="stepper" id="stepper" aria-label="Porting request lifecycle"></section>
 
     <div class="grid">
-      <!-- Submit -->
       <div class="card">
         <h2>1 · Submit a Porting Request</h2>
         <p class="subtitle">POST /api/porting-requests — triggers a real call to the donor network mock for subscriber validation.</p>
@@ -65,7 +64,6 @@
         </form>
       </div>
 
-      <!-- Current request -->
       <div class="card">
         <h2>2 · Current Request</h2>
         <p class="subtitle">Track status, then raise the next lifecycle event. The database's rule engine — not this page — decides what's allowed.</p>
@@ -82,7 +80,6 @@
         </div>
       </div>
 
-      <!-- Number ownership -->
       <div class="card">
         <h2>3 · Number Ownership Lookup</h2>
         <p class="subtitle">GET /api/number-ownership/{msisdn} — only populated once a port has completed through this system.</p>

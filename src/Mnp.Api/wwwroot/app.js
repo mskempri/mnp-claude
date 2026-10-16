@@ -48,8 +48,6 @@ const state = {
   logSeq: 0
 };
 
-// ---------- API wrapper + activity log ----------
-
 async function apiCall(method, path, body) {
   const id = ++state.logSeq;
   const entry = {
@@ -154,8 +152,6 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;");
 }
 
-// ---------- Lifecycle stepper ----------
-
 function renderStepper(status) {
   const isBad = status === "REJECTED" || status === "CANCELLED";
   const currentIndex = isBad || !status ? -1 : STAGES.indexOf(status);
@@ -176,8 +172,6 @@ function renderStepper(status) {
 
   document.getElementById("stepper").innerHTML = html;
 }
-
-// ---------- Current request panel ----------
 
 function renderRequestDetail(request) {
   const el = document.getElementById("request-detail");
@@ -245,8 +239,6 @@ async function raiseEvent(id, eventType, context) {
   }
 }
 
-// ---------- Demo data helpers ----------
-
 function randomMsisdn(ineligible) {
   const base = "3069" + String(Math.floor(1000000 + Math.random() * 8999999));
   return ineligible ? "+" + base.slice(0, -4) + "0000" : "+" + base;
@@ -275,8 +267,6 @@ function fillDemoForm(ineligible) {
   form.requestedPortingDate.value = toDateInputValue(porting);
 }
 
-// ---------- Number ownership ----------
-
 async function lookupOwnership(msisdn) {
   const el = document.getElementById("ownership-result");
   const { ok, status, data } = await apiCall("GET", `/api/number-ownership/${encodeURIComponent(msisdn)}`);
@@ -294,8 +284,6 @@ async function lookupOwnership(msisdn) {
     el.innerHTML = '<p class="empty-state">Lookup failed — see Activity Log.</p>';
   }
 }
-
-// ---------- Outbox ----------
 
 function renderOutbox(events) {
   const body = document.getElementById("outbox-body");
@@ -325,8 +313,6 @@ async function refreshOutbox() {
   if (ok) renderOutbox(data);
 }
 
-// ---------- Health ----------
-
 async function checkHealth() {
   const dot = document.getElementById("health-dot");
   const label = document.getElementById("health-label");
@@ -345,8 +331,6 @@ async function checkHealth() {
   }
 }
 
-// ---------- Theme ----------
-
 function initTheme() {
   const saved = localStorage.getItem("mnp-theme");
   if (saved) document.documentElement.setAttribute("data-theme", saved);
@@ -357,8 +341,6 @@ function initTheme() {
     localStorage.setItem("mnp-theme", next);
   });
 }
-
-// ---------- Wiring ----------
 
 function init() {
   renderStepper(null);

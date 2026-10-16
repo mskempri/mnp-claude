@@ -36,8 +36,6 @@ public sealed class PortingRequestService(
             logger.LogWarning("Porting request {RequestId} rejected by donor network", id);
         }
 
-        // The resulting status (APPROVED or REJECTED) is decided entirely by
-        // the database's rule engine, not chosen here.
         await repository.RaiseEventAsync(
             id,
             eventType,

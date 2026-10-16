@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Runs the full local stack (Mnp.MockExternalApis, Mnp.Worker, Mnp.Api) with
-# each process's stdout/stderr redirected to its own file under logs/,
-# instead of needing to background/redirect them by hand each time.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

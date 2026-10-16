@@ -4,11 +4,6 @@ using Mnp.Domain;
 
 namespace Mnp.Api.Controllers;
 
-/// <summary>
-/// Read-only visibility into the notification outbox that Mnp.Worker relays
-/// (see database/README.md's Notification/Event section) — for dashboards,
-/// not for driving dispatch.
-/// </summary>
 [ApiController]
 [Route("api/outbox")]
 public sealed class OutboxController(OutboxQueryService service) : ControllerBase

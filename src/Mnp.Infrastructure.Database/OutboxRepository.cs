@@ -8,8 +8,6 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Mnp.Infrastructure.Database;
 
-public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : IOutboxRepository
-
 public sealed class OutboxRepository(IDbConnectionFactory connectionFactory, ILogger<OutboxRepository> logger) : IOutboxRepository
 {
     public async Task<OutboxEvent?> ClaimNextPendingEventAsync(CancellationToken cancellationToken)
