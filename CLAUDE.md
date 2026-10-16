@@ -17,10 +17,12 @@ dotnet test tests/Mnp.Application.Tests
 # Run a single test by name
 dotnet test tests/Mnp.Application.Tests --filter "FullyQualifiedName~ProcessNextAsync_ReturnsFalse"
 
-# Run the full local stack (three separate terminals / background jobs)
-dotnet run --project src/Mnp.MockExternalApis &
-dotnet run --project src/Mnp.Worker &
-dotnet run --project src/Mnp.Api
+# Run the full local stack (builds, then starts all three with logs
+# redirected to logs/*.log instead of interleaving in one terminal)
+scripts/run-local.sh
+
+# Watch logs while the stack is running
+tail -f logs/*.log
 
 # Oracle connection string (do this once; never in appsettings.json)
 cd src/Mnp.Api && dotnet user-secrets set "ConnectionStrings:Oracle" \

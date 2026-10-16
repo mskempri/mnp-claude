@@ -88,12 +88,14 @@ the rule engine/timers/outbox tables are for.
    ```
    `CarrierNetwork:BaseUrl` doesn't need a secret for local dev — it already
    points at `Mnp.MockExternalApis` via `appsettings.Development.json`.
-3. Build, then run the mock external API, the outbox relay worker, and the API:
+3. Build, then run the mock external API, the outbox relay worker, and the API.
+   `scripts/run-local.sh` starts all three and redirects each one's logs to
+   its own file under `logs/`, so you don't have to manage backgrounding or
+   redirection by hand:
    ```bash
-   dotnet build
-   dotnet run --project src/Mnp.MockExternalApis &
-   dotnet run --project src/Mnp.Worker &
-   dotnet run --project src/Mnp.Api
+   scripts/run-local.sh
+   # in another terminal:
+   tail -f logs/*.log
    ```
 
 ## Testing
