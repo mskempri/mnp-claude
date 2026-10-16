@@ -42,5 +42,13 @@ CREATE OR REPLACE PACKAGE pkg_outbox AS
         p_error     IN VARCHAR2
     );
 
+    -- Read-only, most-recent-first. No claiming/locking involved - purely for
+    -- observability (e.g. a status dashboard), never called by the relay
+    -- itself.
+    PROCEDURE pr_list_recent(
+        p_limit  IN NUMBER,
+        p_cursor OUT SYS_REFCURSOR
+    );
+
 END pkg_outbox;
 /

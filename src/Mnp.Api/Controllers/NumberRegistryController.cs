@@ -6,7 +6,7 @@ namespace Mnp.Api.Controllers;
 
 [ApiController]
 [Route("api/number-ownership")]
-public sealed class NumberRegistryController(NumberRegistryService service) : ControllerBase
+public sealed class NumberRegistryController(NumberRegistryService service, ILogger<NumberRegistryController> logger) : ControllerBase
 {
     /// <summary>
     /// 404 means "not tracked" - this MSISDN has never completed a port
@@ -16,6 +16,12 @@ public sealed class NumberRegistryController(NumberRegistryService service) : Co
     public async Task<ActionResult<NumberOwnership>> GetByMsisdn(string msisdn, CancellationToken cancellationToken)
     {
         var ownership = await service.LookupAsync(msisdn, cancellationToken);
-        return ownership is null ? NotFound() : Ok(ownership);
+        if (ownership is null)
+        {
+            logger.LogInformation("No ownership record found for requested MSISDN");
+            return NotFound();
+        }
+
+        return Ok(ownership);
     }
 }

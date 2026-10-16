@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Mnp.Application.Abstractions;
 using Mnp.Application.Services;
 using Mnp.Domain;
@@ -30,7 +31,7 @@ public sealed class PortingRequestServiceTests
     {
         var repository = new FakePortingRequestRepository(MakeRequest(PortingStatus.Approved));
         var carrierClient = new FakeCarrierNetworkClient { Result = new DonorValidationResult(true, null) };
-        var service = new PortingRequestService(repository, carrierClient);
+        var service = new PortingRequestService(repository, carrierClient, NullLogger<PortingRequestService>.Instance);
 
         var result = await service.SubmitAsync(
             Msisdn, DonorNetworkCode, RecipientNetworkCode, RequestedPortingDate, PacCode, PacIssuedDate,
@@ -59,7 +60,7 @@ public sealed class PortingRequestServiceTests
         {
             Result = new DonorValidationResult(false, "subscriber not found")
         };
-        var service = new PortingRequestService(repository, carrierClient);
+        var service = new PortingRequestService(repository, carrierClient, NullLogger<PortingRequestService>.Instance);
 
         var result = await service.SubmitAsync(
             Msisdn, DonorNetworkCode, RecipientNetworkCode, RequestedPortingDate, PacCode, PacIssuedDate,
@@ -76,7 +77,7 @@ public sealed class PortingRequestServiceTests
     {
         var repository = new FakePortingRequestRepository(MakeRequest(PortingStatus.Validating));
         var carrierClient = new FakeCarrierNetworkClient { ThrowOnValidate = new HttpRequestException("donor network unreachable") };
-        var service = new PortingRequestService(repository, carrierClient);
+        var service = new PortingRequestService(repository, carrierClient, NullLogger<PortingRequestService>.Instance);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => service.SubmitAsync(
             Msisdn, DonorNetworkCode, RecipientNetworkCode, RequestedPortingDate, PacCode, PacIssuedDate,

@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Mnp.Application.Abstractions;
 using Mnp.Domain;
 using Oracle.ManagedDataAccess.Client;
@@ -12,7 +13,7 @@ namespace Mnp.Infrastructure.Database;
 /// mirrors how PortingRequestRepository.Map() shapes a raw cursor row into a
 /// typed object; JSON stays an infrastructure concern.
 /// </summary>
-public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : IOutboxRepository
+public sealed class OutboxRepository(IDbConnectionFactory connectionFactory, ILogger<OutboxRepository> logger) : IOutboxRepository
 {
     public async Task<OutboxEvent?> ClaimNextPendingEventAsync(CancellationToken cancellationToken)
     {
@@ -55,7 +56,7 @@ public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : I
             using var json = JsonDocument.Parse(payload);
             var root = json.RootElement;
 
-            return new OutboxEvent
+            var outboxEvent = new OutboxEvent
             {
                 Id = id,
                 RequestId = root.GetProperty("requestId").GetInt64(),
@@ -65,9 +66,13 @@ public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : I
                 DonorNetworkCode = root.GetProperty("donorNetworkCode").GetString()!,
                 RecipientNetworkCode = root.GetProperty("recipientNetworkCode").GetString()!
             };
+
+            logger.LogInformation("Claimed outbox event {OutboxEventId} ({EventType})", id, eventType);
+            return outboxEvent;
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Outbox event {OutboxEventId} could not be parsed for dispatch", id);
             await MarkFailedAsync(id, $"Claimed row could not be parsed for dispatch: {ex.Message}", cancellationToken);
             return null;
         }
@@ -84,6 +89,7 @@ public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : I
         command.Parameters.Add("p_outbox_id", OracleDbType.Int64, outboxId, ParameterDirection.Input);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        logger.LogInformation("Marked outbox event {OutboxEventId} as published", outboxId);
     }
 
     public async Task MarkFailedAsync(long outboxId, string error, CancellationToken cancellationToken)
@@ -98,5 +104,49 @@ public sealed class OutboxRepository(IDbConnectionFactory connectionFactory) : I
         command.Parameters.Add("p_error", OracleDbType.Varchar2, error, ParameterDirection.Input);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        logger.LogWarning("Marked outbox event {OutboxEventId} as failed: {Error}", outboxId, error);
+    }
+
+    public async Task<IReadOnlyList<OutboxEventSummary>> GetRecentAsync(int limit, CancellationToken cancellationToken)
+    {
+        await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = "PKG_OUTBOX.PR_LIST_RECENT";
+        command.BindByName = true;
+
+        command.Parameters.Add("p_limit", OracleDbType.Int32, limit, ParameterDirection.Input);
+        command.Parameters.Add("p_cursor", OracleDbType.RefCursor, DBNull.Value, ParameterDirection.Output);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        var cursor = (OracleRefCursor)command.Parameters["p_cursor"].Value;
+        await using var reader = cursor.GetDataReader();
+
+        var results = new List<OutboxEventSummary>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var audienceOrdinal = reader.GetOrdinal("AUDIENCE");
+            var lastErrorOrdinal = reader.GetOrdinal("LAST_ERROR");
+            var claimedAtOrdinal = reader.GetOrdinal("CLAIMED_AT");
+            var publishedAtOrdinal = reader.GetOrdinal("PUBLISHED_AT");
+
+            results.Add(new OutboxEventSummary
+            {
+                Id = reader.GetInt64(reader.GetOrdinal("ID")),
+                RequestId = reader.GetInt64(reader.GetOrdinal("AGGREGATE_ID")),
+                EventType = reader.GetString(reader.GetOrdinal("EVENT_TYPE")),
+                Audience = reader.IsDBNull(audienceOrdinal)
+                    ? null
+                    : NotificationAudienceMapping.FromCode(reader.GetString(audienceOrdinal)),
+                Status = OutboxEventStatusMapping.FromCode(reader.GetString(reader.GetOrdinal("STATUS"))),
+                AttemptCount = reader.GetInt32(reader.GetOrdinal("ATTEMPT_COUNT")),
+                LastError = reader.IsDBNull(lastErrorOrdinal) ? null : reader.GetString(lastErrorOrdinal),
+                CreatedAt = new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("CREATED_AT"))),
+                ClaimedAt = reader.IsDBNull(claimedAtOrdinal) ? null : new DateTimeOffset(reader.GetDateTime(claimedAtOrdinal)),
+                PublishedAt = reader.IsDBNull(publishedAtOrdinal) ? null : new DateTimeOffset(reader.GetDateTime(publishedAtOrdinal))
+            });
+        }
+
+        return results;
     }
 }

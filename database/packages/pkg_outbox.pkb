@@ -96,5 +96,18 @@ CREATE OR REPLACE PACKAGE BODY pkg_outbox AS
          WHERE id = p_outbox_id;
     END pr_mark_failed;
 
+    PROCEDURE pr_list_recent(
+        p_limit  IN NUMBER,
+        p_cursor OUT SYS_REFCURSOR
+    ) IS
+    BEGIN
+        OPEN p_cursor FOR
+            SELECT id, aggregate_id, event_type, audience, status,
+                   attempt_count, last_error, created_at, claimed_at, published_at
+              FROM mnp_outbox_events
+             ORDER BY created_at DESC
+             FETCH FIRST p_limit ROWS ONLY;
+    END pr_list_recent;
+
 END pkg_outbox;
 /

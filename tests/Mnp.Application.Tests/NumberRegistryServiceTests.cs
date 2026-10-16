@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Mnp.Application.Abstractions;
 using Mnp.Application.Services;
 using Mnp.Domain;
@@ -16,7 +17,7 @@ public sealed class NumberRegistryServiceTests
             LastPortedAt = DateTimeOffset.UtcNow,
             LastPortingRequestId = 42
         };
-        var service = new NumberRegistryService(new FakeNumberRegistryRepository(ownership));
+        var service = new NumberRegistryService(new FakeNumberRegistryRepository(ownership), NullLogger<NumberRegistryService>.Instance);
 
         var result = await service.LookupAsync("+306900000001", CancellationToken.None);
 
@@ -26,7 +27,7 @@ public sealed class NumberRegistryServiceTests
     [Fact]
     public async Task LookupAsync_UntrackedMsisdn_ReturnsNull()
     {
-        var service = new NumberRegistryService(new FakeNumberRegistryRepository(null));
+        var service = new NumberRegistryService(new FakeNumberRegistryRepository(null), NullLogger<NumberRegistryService>.Instance);
 
         var result = await service.LookupAsync("+306900000002", CancellationToken.None);
 

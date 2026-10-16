@@ -8,11 +8,12 @@ namespace Mnp.MockExternalApis.Controllers;
 /// </summary>
 [ApiController]
 [Route("customers/{msisdn}/notifications")]
-public sealed class CustomerNotificationsController : ControllerBase
+public sealed class CustomerNotificationsController(ILogger<CustomerNotificationsController> logger) : ControllerBase
 {
     [HttpPost]
     public IActionResult Notify([FromRoute] string msisdn, [FromBody] CustomerNotifyRequest request)
     {
+        logger.LogInformation("Mock: received customer notification {EventType}", request.EventType);
         return Ok();
     }
 }

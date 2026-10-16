@@ -10,7 +10,7 @@ namespace Mnp.MockExternalApis.Controllers;
 /// </summary>
 [ApiController]
 [Route("networks/{networkCode}/subscribers")]
-public sealed class DonorNetworkController : ControllerBase
+public sealed class DonorNetworkController(ILogger<DonorNetworkController> logger) : ControllerBase
 {
     // Deterministic test hook: any MSISDN ending in "0000" is reported
     // ineligible, so both the success and failure paths are reachable
@@ -23,6 +23,10 @@ public sealed class DonorNetworkController : ControllerBase
         [FromBody] ValidateSubscriberRequest request)
     {
         var isEligible = !request.Msisdn.EndsWith(IneligibleMsisdnSuffix, StringComparison.Ordinal);
+
+        logger.LogInformation(
+            "Mock: validated subscriber for network {NetworkCode}, result: {Eligibility}",
+            networkCode, isEligible ? "eligible" : "ineligible");
 
         return Ok(new ValidateSubscriberResponse(
             isEligible,

@@ -6,13 +6,17 @@ namespace Mnp.Api.Controllers;
 
 [ApiController]
 [Route("api/porting-requests")]
-public sealed class PortingRequestsController(PortingRequestService service) : ControllerBase
+public sealed class PortingRequestsController(PortingRequestService service, ILogger<PortingRequestsController> logger) : ControllerBase
 {
     [HttpPost]
     public async Task<ActionResult<PortingRequest>> Submit(
         [FromBody] SubmitPortingRequest request,
         CancellationToken cancellationToken)
     {
+        logger.LogInformation(
+            "Received porting request submission: {DonorNetworkCode} -> {RecipientNetworkCode}",
+            request.DonorNetworkCode, request.RecipientNetworkCode);
+
         var created = await service.SubmitAsync(
             request.Msisdn,
             request.DonorNetworkCode,
@@ -21,6 +25,8 @@ public sealed class PortingRequestsController(PortingRequestService service) : C
             request.PacCode,
             request.PacIssuedDate,
             cancellationToken);
+
+        logger.LogInformation("Porting request {RequestId} created with status {Status}", created.Id, created.Status);
 
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
@@ -55,6 +61,7 @@ public sealed class PortingRequestsController(PortingRequestService service) : C
         [FromBody] RaisePortingRequestEvent request,
         CancellationToken cancellationToken)
     {
+        logger.LogInformation("Raising event {EventType} on porting request {RequestId}", request.EventType, id);
         var updated = await service.RaiseEventAsync(id, request.EventType, request.Context, cancellationToken);
         return Ok(updated);
     }

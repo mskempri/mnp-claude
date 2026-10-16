@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MNP Platform — Live Showcase</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>MNP Platform — Live Showcase</h1>
+      <p>Mobile Number Portability · every action below is a real HTTP call to this running <code>Mnp.Api</code>, which in turn talks to Oracle and (via <code>Mnp.MockExternalApis</code>) the donor/carrier/customer endpoints.</p>
+    </div>
+    <div class="topbar-right">
+      <span class="health-pill"><span id="health-dot" class="health-dot"></span><span id="health-label">checking…</span></span>
+      <button class="theme-toggle" id="theme-toggle" type="button">🌓 Theme</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stepper" id="stepper" aria-label="Porting request lifecycle"></section>
+
+    <div class="grid">
+      <!-- Submit -->
+      <div class="card">
+        <h2>1 · Submit a Porting Request</h2>
+        <p class="subtitle">POST /api/porting-requests — triggers a real call to the donor network mock for subscriber validation.</p>
+        <form id="submit-form">
+          <div class="field">
+            <label for="f-msisdn">MSISDN</label>
+            <input id="f-msisdn" name="msisdn" required placeholder="+306900000001" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="f-donor">Donor network code</label>
+              <input id="f-donor" name="donorNetworkCode" required placeholder="COSMOTE" />
+            </div>
+            <div class="field">
+              <label for="f-recipient">Recipient network code</label>
+              <input id="f-recipient" name="recipientNetworkCode" required placeholder="VODAFONE_GR" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="f-pac">PAC code</label>
+              <input id="f-pac" name="pacCode" required placeholder="ABC12345" />
+            </div>
+            <div class="field">
+              <label for="f-pac-date">PAC issued date</label>
+              <input id="f-pac-date" name="pacIssuedDate" type="date" required />
+            </div>
+          </div>
+          <div class="field">
+            <label for="f-porting-date">Requested porting date</label>
+            <input id="f-porting-date" name="requestedPortingDate" type="date" required />
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn" id="fill-demo">✨ Fill demo values</button>
+            <button type="button" class="btn" id="fill-demo-bad">🚫 Fill ineligible demo</button>
+          </div>
+          <div class="btn-row">
+            <button type="submit" class="btn btn-primary" id="submit-btn">Submit request</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Current request -->
+      <div class="card">
+        <h2>2 · Current Request</h2>
+        <p class="subtitle">Track status, then raise the next lifecycle event. The database's rule engine — not this page — decides what's allowed.</p>
+        <div class="toolbar">
+          <input id="load-id" type="number" min="1" placeholder="Load by request ID…" />
+          <button class="btn" id="load-id-btn">Load</button>
+        </div>
+        <div class="toolbar">
+          <input id="load-msisdn" placeholder="Find by MSISDN…" />
+          <button class="btn" id="load-msisdn-btn">Search</button>
+        </div>
+        <div id="request-detail">
+          <p class="empty-state">Submit or load a request to see it here.</p>
+        </div>
+      </div>
+
+      <!-- Number ownership -->
+      <div class="card">
+        <h2>3 · Number Ownership Lookup</h2>
+        <p class="subtitle">GET /api/number-ownership/{msisdn} — only populated once a port has completed through this system.</p>
+        <div class="toolbar">
+          <input id="ownership-msisdn" placeholder="MSISDN to look up…" />
+          <button class="btn" id="ownership-btn">Look up</button>
+        </div>
+        <div id="ownership-result"><p class="empty-state">No lookup yet.</p></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        Notification Outbox — relayed by <code>Mnp.Worker</code>
+        <label class="muted" style="font-weight:600;"><input type="checkbox" id="outbox-auto" checked style="vertical-align:middle;margin-right:4px;" />auto-refresh</label>
+      </h2>
+      <p class="subtitle">GET /api/outbox — the engine enqueues a row here on every status change; a separate worker process dispatches it to donor/recipient networks or the customer. PENDING rows that never move mean <code>Mnp.Worker</code> isn't running.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Request</th><th>Event</th><th>Audience</th><th>Status</th><th>Attempts</th><th>Created</th><th>Published</th></tr>
+          </thead>
+          <tbody id="outbox-body"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>API Activity Log</h2>
+      <p class="subtitle">Every request this page makes, newest first. Click a row to see the raw request/response JSON.</p>
+      <div class="log" id="log"></div>
+    </div>
+
+    <p class="footnote">
+      This page exercises <code>Mnp.Api</code> only (porting-request lifecycle + number-ownership lookup); donor validation and carrier/customer notifications happen behind the scenes via <code>Mnp.MockExternalApis</code> and are visible as outbox rows above, not called directly from here.
+      For the full picture run all three processes locally: <code>Mnp.MockExternalApis</code>, <code>Mnp.Worker</code>, and <code>Mnp.Api</code> (see README.md). Known, documented gaps carried into this demo: no scheduled SLA/timer sweep (nothing moves a request on its own just because time passed — use the action buttons), and a blocked fraud-velocity attempt (4th submission for the same MSISDN within 7 days) surfaces only as a generic error, not a friendly message.
+    </p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
