@@ -187,11 +187,16 @@ function renderRequestDetail(request) {
     return;
   }
 
-  state.currentRequestId = request.id;
-  renderStepper(request.status);
+  // The API serializes the PortingStatus enum in its C# casing (e.g.
+  // "Approved"); this page's lookup tables key off the DB's own
+  // ALL_CAPS status codes, so normalize once here.
+  const status = request.status.toUpperCase();
 
-  const [badgeClass, badgeLabel] = REQUEST_STATUS_BADGE[request.status] ?? ["badge-neutral", request.status];
-  const actions = NEXT_ACTIONS[request.status] ?? [];
+  state.currentRequestId = request.id;
+  renderStepper(status);
+
+  const [badgeClass, badgeLabel] = REQUEST_STATUS_BADGE[status] ?? ["badge-neutral", status];
+  const actions = NEXT_ACTIONS[status] ?? [];
 
   el.innerHTML = `
     <dl class="kv">
@@ -267,7 +272,7 @@ function fillDemoForm(ineligible) {
   const form = document.getElementById("submit-form");
   form.msisdn.value = randomMsisdn(ineligible);
   form.donorNetworkCode.value = "COSMOTE";
-  form.recipientNetworkCode.value = "VODAFONE_GR";
+  form.recipientNetworkCode.value = "VODAFONE";
   form.pacCode.value = randomPac();
   form.pacIssuedDate.value = toDateInputValue(new Date());
   const porting = new Date();
