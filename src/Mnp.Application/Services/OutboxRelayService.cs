@@ -25,6 +25,9 @@ public sealed class OutboxRelayService(
         }
         catch (Exception ex)
         {
+            logger.LogError(ex,
+                "Failed to dispatch outbox event {OutboxEventId} ({EventType}, audience {Audience}) for request {RequestId}",
+                outboxEvent.Id, outboxEvent.EventType, outboxEvent.Audience, outboxEvent.RequestId);
             await repository.MarkFailedAsync(outboxEvent.Id, ex.Message, cancellationToken);
         }
 

@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Local run logs (see scripts/run-local.sh)
+/logs/
+
 # User-specific files
 *.rsuser
 *.suo

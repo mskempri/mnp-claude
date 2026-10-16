@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.Extensions.Logging;
 using Mnp.Application.Abstractions;
 using Mnp.Domain;
 using Oracle.ManagedDataAccess.Client;
@@ -6,7 +7,8 @@ using Oracle.ManagedDataAccess.Types;
 
 namespace Mnp.Infrastructure.Database;
 
-public sealed class PortingRequestRepository(IDbConnectionFactory connectionFactory) : IPortingRequestRepository
+public sealed class PortingRequestRepository(IDbConnectionFactory connectionFactory, ILogger<PortingRequestRepository> logger)
+    : IPortingRequestRepository
 {
     public async Task<long> CreateAsync(
         string msisdn,
@@ -35,10 +37,22 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         command.Parameters.Add("p_pac_code", OracleDbType.Varchar2, pacCode, ParameterDirection.Input);
         command.Parameters.Add("p_pac_issued_date", OracleDbType.Date, pacIssuedDate.ToDateTime(TimeOnly.MinValue), ParameterDirection.Input);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Failed to create porting request for donor {DonorNetworkCode} / recipient {RecipientNetworkCode}",
+                donorNetworkCode, recipientNetworkCode);
+            throw;
+        }
 
         var oracleDecimal = ((OracleDecimal)command.Parameters[0].Value);
-        return oracleDecimal.ToInt64();
+        var id = oracleDecimal.ToInt64();
+        logger.LogInformation("Created porting request {RequestId}", id);
+        return id;
     }
 
     public async Task<PortingRequest?> GetByIdAsync(long id, CancellationToken cancellationToken)
@@ -94,7 +108,17 @@ public sealed class PortingRequestRepository(IDbConnectionFactory connectionFact
         command.Parameters.Add("p_event_type", OracleDbType.Varchar2, eventType, ParameterDirection.Input);
         command.Parameters.Add("p_context", OracleDbType.Varchar2, (object?)context ?? DBNull.Value, ParameterDirection.Input);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to raise event {EventType} on porting request {RequestId}", eventType, id);
+            throw;
+        }
+
+        logger.LogInformation("Raised event {EventType} on porting request {RequestId}", eventType, id);
     }
 
     private static async Task<OracleDataReader> ExecuteForCursorAsync(

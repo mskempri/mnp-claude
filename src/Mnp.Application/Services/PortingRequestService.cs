@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mnp.Application.Abstractions;
 using Mnp.Domain;
 
@@ -5,7 +6,8 @@ namespace Mnp.Application.Services;
 
 public sealed class PortingRequestService(
     IPortingRequestRepository repository,
-    ICarrierNetworkClient carrierNetworkClient)
+    ICarrierNetworkClient carrierNetworkClient,
+    ILogger<PortingRequestService> logger)
 {
     public async Task<PortingRequest> SubmitAsync(
         string msisdn,
@@ -19,13 +21,26 @@ public sealed class PortingRequestService(
         var id = await repository.CreateAsync(
             msisdn, donorNetworkCode, recipientNetworkCode, requestedPortingDate,
             pacCode, pacIssuedDate, cancellationToken);
+        logger.LogInformation("Porting request {RequestId} created, pending donor-network validation", id);
 
         var validation = await carrierNetworkClient.ValidateSubscriberAsync(
             msisdn, donorNetworkCode, cancellationToken);
 
+        var eventType = validation.IsEligible ? "VALIDATION_PASSED" : "VALIDATION_FAILED";
+        if (validation.IsEligible)
+        {
+            logger.LogInformation("Porting request {RequestId} validation result: {EventType}", id, eventType);
+        }
+        else
+        {
+            logger.LogWarning("Porting request {RequestId} rejected by donor network", id);
+        }
+
+        // The resulting status (APPROVED or REJECTED) is decided entirely by
+        // the database's rule engine, not chosen here.
         await repository.RaiseEventAsync(
             id,
-            validation.IsEligible ? "VALIDATION_PASSED" : "VALIDATION_FAILED",
+            eventType,
             validation.IsEligible ? null : validation.DenialReason,
             cancellationToken);
 
@@ -44,6 +59,7 @@ public sealed class PortingRequestService(
         long id, string eventType, string? context, CancellationToken cancellationToken)
     {
         await repository.RaiseEventAsync(id, eventType, context, cancellationToken);
+        logger.LogInformation("Porting request {RequestId} event {EventType} applied", id, eventType);
 
         var updated = await repository.GetByIdAsync(id, cancellationToken);
         return updated ?? throw new InvalidOperationException(

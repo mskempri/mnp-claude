@@ -1,9 +1,11 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.Logging;
 using Mnp.Application.Abstractions;
 
 namespace Mnp.Infrastructure.ExternalApis;
 
-public sealed class CarrierNetworkNotificationClient(HttpClient httpClient) : ICarrierNetworkNotificationClient
+public sealed class CarrierNetworkNotificationClient(HttpClient httpClient, ILogger<CarrierNetworkNotificationClient> logger)
+    : ICarrierNetworkNotificationClient
 {
     public async Task NotifyAsync(
         string networkCode,
@@ -11,11 +13,20 @@ public sealed class CarrierNetworkNotificationClient(HttpClient httpClient) : IC
         string msisdn,
         CancellationToken cancellationToken)
     {
-        var response = await httpClient.PostAsJsonAsync(
-            $"networks/{networkCode}/notifications",
-            new { eventType, msisdn },
-            cancellationToken);
+        logger.LogInformation("Notifying network {NetworkCode} of event {EventType}", networkCode, eventType);
 
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            var response = await httpClient.PostAsJsonAsync(
+                $"networks/{networkCode}/notifications",
+                new { eventType, msisdn },
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to notify network {NetworkCode} of event {EventType}", networkCode, eventType);
+            throw;
+        }
     }
 }

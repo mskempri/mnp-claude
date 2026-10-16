@@ -4,7 +4,7 @@ namespace Mnp.MockExternalApis.Controllers;
 
 [ApiController]
 [Route("networks/{networkCode}/subscribers")]
-public sealed class DonorNetworkController : ControllerBase
+public sealed class DonorNetworkController(ILogger<DonorNetworkController> logger) : ControllerBase
 {
     private const string IneligibleMsisdnSuffix = "0000";
 
@@ -14,6 +14,10 @@ public sealed class DonorNetworkController : ControllerBase
         [FromBody] ValidateSubscriberRequest request)
     {
         var isEligible = !request.Msisdn.EndsWith(IneligibleMsisdnSuffix, StringComparison.Ordinal);
+
+        logger.LogInformation(
+            "Mock: validated subscriber for network {NetworkCode}, result: {Eligibility}",
+            networkCode, isEligible ? "eligible" : "ineligible");
 
         return Ok(new ValidateSubscriberResponse(
             isEligible,

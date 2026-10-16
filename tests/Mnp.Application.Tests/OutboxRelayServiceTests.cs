@@ -134,6 +134,9 @@ public sealed class OutboxRelayServiceTests
             FailedCalls.Add((outboxId, error));
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<OutboxEventSummary>> GetRecentAsync(int limit, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<OutboxEventSummary>>([]);
     }
 
     private sealed class FakeCarrierNetworkNotificationClient : ICarrierNetworkNotificationClient

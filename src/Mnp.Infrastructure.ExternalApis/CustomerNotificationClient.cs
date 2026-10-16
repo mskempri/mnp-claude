@@ -1,20 +1,32 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.Logging;
 using Mnp.Application.Abstractions;
 
 namespace Mnp.Infrastructure.ExternalApis;
 
-public sealed class CustomerNotificationClient(HttpClient httpClient) : ICustomerNotificationClient
+
+public sealed class CustomerNotificationClient(HttpClient httpClient, ILogger<CustomerNotificationClient> logger)
+    : ICustomerNotificationClient
 {
     public async Task NotifyAsync(
         string msisdn,
         string eventType,
         CancellationToken cancellationToken)
     {
-        var response = await httpClient.PostAsJsonAsync(
-            $"customers/{msisdn}/notifications",
-            new { eventType },
-            cancellationToken);
+        logger.LogInformation("Notifying customer of event {EventType}", eventType);
 
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            var response = await httpClient.PostAsJsonAsync(
+                $"customers/{msisdn}/notifications",
+                new { eventType },
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to notify customer of event {EventType}", eventType);
+            throw;
+        }
     }
 }

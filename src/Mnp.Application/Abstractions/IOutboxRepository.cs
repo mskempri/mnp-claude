@@ -9,4 +9,6 @@ public interface IOutboxRepository
     Task MarkPublishedAsync(long outboxId, CancellationToken cancellationToken);
 
     Task MarkFailedAsync(long outboxId, string error, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OutboxEventSummary>> GetRecentAsync(int limit, CancellationToken cancellationToken);
 }
