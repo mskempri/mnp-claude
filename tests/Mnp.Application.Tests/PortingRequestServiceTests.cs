@@ -148,5 +148,9 @@ public sealed class PortingRequestServiceTests
             ValidateCompletedBeforeRaiseEvent = true;
             return Task.FromResult(Result!);
         }
+
+        public Task<DonorValidationResultV2> ValidateSubscriberV2Async(
+            SubscriberValidationRequestV2 request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }
