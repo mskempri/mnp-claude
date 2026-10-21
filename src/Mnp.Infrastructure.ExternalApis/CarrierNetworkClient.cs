@@ -41,5 +41,39 @@ public sealed class CarrierNetworkClient(HttpClient httpClient, ILogger<CarrierN
         return new DonorValidationResult(result.IsEligible, result.DenialReason);
     }
 
+    public async Task<DonorValidationResultV2> ValidateSubscriberV2Async(
+        SubscriberValidationRequestV2 request,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Calling donor network {NetworkCode} to validate subscriber (v2)", request.DonorNetworkCode);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.PostAsJsonAsync(
+                $"networks/{request.DonorNetworkCode}/subscribers/validate/v2",
+                request,
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Donor network {NetworkCode} validation call (v2) failed", request.DonorNetworkCode);
+            throw;
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<SubscriberValidationResponseV2>(cancellationToken)
+            ?? throw new InvalidOperationException("Donor network returned an empty validation response.");
+
+        logger.LogInformation(
+            "Donor network {NetworkCode} validation result (v2): status={Status}",
+            request.DonorNetworkCode, result.Status);
+
+        return new DonorValidationResultV2(result.Status, result.DenialReason, result.EligibleUntil);
+    }
+
     private sealed record SubscriberValidationResponse(bool IsEligible, string? DenialReason);
+
+    private sealed record SubscriberValidationResponseV2(string Status, string? DenialReason, DateTimeOffset? EligibleUntil);
 }
