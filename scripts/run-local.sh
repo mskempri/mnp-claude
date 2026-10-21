@@ -8,6 +8,43 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 mkdir -p logs
 
+if command -v podman >/dev/null 2>&1; then
+  ENGINE=podman
+elif command -v docker >/dev/null 2>&1; then
+  ENGINE=docker
+else
+  echo "Neither podman nor docker found on PATH -- cannot start the local Oracle DB." >&2
+  echo "Install one (see README.md), or start Oracle manually, then re-run this script." >&2
+  exit 1
+fi
+
+if [ "$ENGINE" = podman ] && ! podman info >/dev/null 2>&1; then
+  echo "Starting podman machine..."
+  podman machine start
+fi
+
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
+echo "Starting local Oracle DB (mnp-oracle)..."
+$ENGINE compose up -d
+
+echo "Waiting for Oracle to be ready..."
+for i in $(seq 1 90); do
+  if $ENGINE exec mnp-oracle /opt/oracle/healthcheck.sh >/dev/null 2>&1; then
+    echo "Oracle is ready."
+    break
+  fi
+  if [ "$i" -eq 90 ]; then
+    echo "Oracle didn't become ready in time -- check '$ENGINE logs mnp-oracle'." >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 dotnet build
 
 pids=()
